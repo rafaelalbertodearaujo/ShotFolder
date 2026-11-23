@@ -1,0 +1,39 @@
+# Dependências e builds
+node_modules/
+dist/
+build/
+.expo/
+app/android/
+app/ios/
+*.apk
+*.aab
+
+# Estado local, segredos e chaves (nunca no repositório)
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+admin.token
+devices.json
+config.local.json
+audit.jsonl
+uploads-vistos.json
+
+# Fotos de teste
+test-output/
+*.jpg
+*.jpeg
+*.png
+*.heic
+!docs/**/*.png
+
+# Sistema e editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
+.claude/settings.local.json
