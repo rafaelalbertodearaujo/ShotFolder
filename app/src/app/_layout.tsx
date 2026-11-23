@@ -16,6 +16,7 @@ export default function Layout() {
       >
         <Stack.Screen name="index" options={{ title: "ShotFolder" }} />
         <Stack.Screen name="parear" options={{ title: "Parear com o PC" }} />
+        <Stack.Screen name="foto" options={{ title: "Foto" }} />
       </Stack>
     </PairedProvider>
   );

@@ -4,11 +4,15 @@
  */
 import {
   buildFoldersCanonical,
+  buildUploadCanonical,
   foldersHeaders,
+  LIMITS,
   ROUTES,
+  uploadHeaders,
   type PairInfo,
+  type UploadFields,
 } from "@shotfolder/protocol";
-import type { Signer } from "./crypto";
+import { sha256Hex, type Signer } from "./crypto";
 
 export interface Session {
   host: string;
@@ -48,6 +52,18 @@ const MENSAGENS: Record<string, string> = {
   invalid_key: "Chave do aparelho inválida.",
   unauthorized: "O PC não reconhece este celular (revogado ou pareamento apagado). Pareie de novo.",
   network: "Não consegui falar com o PC. O Tailscale está ligado nos dois e o ShotFolder está rodando?",
+  unknown_folder: "Essa pasta não está mais na lista do PC. Atualize as pastas.",
+  folder_unavailable: "A pasta existe na lista, mas o PC não consegue gravar nela agora.",
+  rate_limited: "Muitas fotos em pouco tempo. Espere um minuto.",
+  daily_quota: "Cota diária de envio atingida no PC.",
+  insufficient_storage: "O disco do PC está quase cheio.",
+  hash_mismatch: "A foto chegou corrompida. Tente de novo.",
+  size_mismatch: "A foto chegou incompleta. Tente de novo.",
+  body_incomplete: "A conexão caiu no meio do envio. Tente de novo.",
+  content_mismatch: "O PC não reconheceu o arquivo como JPEG.",
+  too_large: "Foto grande demais (limite de 25 MB).",
+  upload_id_conflict: "Conflito de identificador de envio. Tente de novo.",
+  in_progress: "Essa foto já está sendo enviada.",
 };
 
 function erro(code: string, status?: number): ApiError {
@@ -126,6 +142,54 @@ export async function listFolders(
     : [];
   const defaultFolder = typeof body.defaultFolder === "string" ? body.defaultFolder : null;
   return { folders, defaultFolder };
+}
+
+export interface UploadResult {
+  /** "saved" = gravada agora; "duplicate" = o PC já tinha recebido este envio. */
+  status: "saved" | "duplicate";
+  file: string;
+  folder: string;
+}
+
+/**
+ * Envia uma foto JPEG assinada. O `uploadId` identifica a foto: reenviar com o mesmo
+ * id (por exemplo, depois de a conexão cair) não grava de novo no PC.
+ */
+export async function uploadPhoto(
+  session: Session,
+  signer: Signer,
+  folderId: string,
+  jpeg: Uint8Array,
+  ids: { now: () => number; uuid: () => string },
+  opts: { uploadId?: string; fetchFn?: FetchFn } = {},
+): Promise<UploadResult> {
+  if (jpeg.length === 0) throw erro("size_mismatch");
+  if (jpeg.length > LIMITS.maxUploadBytes) throw erro("too_large");
+  const fields: UploadFields = {
+    deviceId: session.deviceId,
+    uploadId: opts.uploadId ?? ids.uuid(),
+    timestamp: String(ids.now()),
+    folderId,
+    contentType: "image/jpeg",
+    contentLength: String(jpeg.length),
+    sha256: sha256Hex(jpeg),
+  };
+  const signature = await signer.sign(buildUploadCanonical(fields));
+  const { status, body } = await request(
+    opts.fetchFn ?? fetch,
+    `${baseUrl(session)}${ROUTES.upload}`,
+    // Uint8Array: o expo/fetch (Android) e o fetch do Node mandam Content-Length fixo.
+    { method: "POST", headers: uploadHeaders(fields, signature), body: jpeg as unknown as BodyInit },
+    120_000,
+  );
+  if ((status === 201 || status === 200) && typeof body.file === "string") {
+    return {
+      status: status === 201 ? "saved" : "duplicate",
+      file: body.file,
+      folder: typeof body.folder === "string" ? body.folder : folderId,
+    };
+  }
+  throw erro(typeof body.error === "string" ? body.error : "unknown", status);
 }
 
 /** Deixa o nome do modelo dentro do formato aceito pelo PC. */

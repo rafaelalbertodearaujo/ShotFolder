@@ -50,4 +50,16 @@ export async function loadPaired(): Promise<Paired | null> {
 /** Apaga só deste celular. Para cortar o acesso de verdade, revogue também no PC. */
 export async function forgetPaired(): Promise<void> {
   await SecureStore.deleteItemAsync(KEY);
+  await SecureStore.deleteItemAsync("shotfolder.lastFolder.v1");
+}
+
+const LAST_FOLDER = "shotfolder.lastFolder.v1";
+
+/** Última pasta usada (vira a sugestão da próxima foto). */
+export async function loadLastFolder(): Promise<string | null> {
+  return SecureStore.getItemAsync(LAST_FOLDER);
+}
+
+export async function saveLastFolder(id: string): Promise<void> {
+  await SecureStore.setItemAsync(LAST_FOLDER, id);
 }

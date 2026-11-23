@@ -75,6 +75,8 @@ export default function Inicio() {
         </Text>
       </View>
 
+      <Botao onPress={() => router.push("/foto")}>Tirar foto</Botao>
+
       <Text style={s.rotulo}>Pastas do PC</Text>
       {erro && <Text style={s.erro}>{erro}</Text>}
       <FlatList

@@ -3,7 +3,7 @@
  * de verdade, por HTTP em 127.0.0.1. Só a câmera e o SecureStore ficam de fora.
  */
 import { randomBytes, randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,8 +12,10 @@ import type { FastifyInstance } from "fastify";
 import { buildApp, createPairing } from "../../server/src/app";
 import type { Pairing } from "../../server/src/pairing";
 import { saveDevices, loadDevices } from "../../server/src/state";
-import { ApiError, listFolders, pairWithPc, safeDeviceName } from "../src/lib/api";
+import { ApiError, listFolders, pairWithPc, safeDeviceName, uploadPhoto, type Session } from "../src/lib/api";
 import { pairCodeFor, SoftwareSigner } from "../src/lib/crypto";
+import { stripJpegMetadata } from "../src/lib/jpeg";
+import { APP0, APP1_EXIF, DQT, jpegCom, SCAN } from "./jpeg-fixture";
 
 const aleatorio = (n: number) => new Uint8Array(randomBytes(n));
 const ids = { now: Date.now, uuid: randomUUID };
@@ -103,6 +105,59 @@ describe("app ↔ servidor", () => {
     await expect(
       listFolders({ host: "127.0.0.1", port: 1, deviceId: "dev_xxxxxxxx" }, signer, ids),
     ).rejects.toMatchObject({ code: "network" });
+  });
+});
+
+async function parear(): Promise<{ session: Session; signer: SoftwareSigner }> {
+  const { token } = pairing.start();
+  const signer = SoftwareSigner.generate(aleatorio);
+  const [session] = await Promise.all([
+    pairWithPc({ host: "127.0.0.1", port, token }, signer, "Celular"),
+    pcConfirma(pairCodeFor(token, signer.publicKeySpki)),
+  ]);
+  return { session, signer };
+}
+
+describe("envio de foto", () => {
+  it("foto sem EXIF chega na pasta escolhida, byte a byte", async () => {
+    const { session, signer } = await parear();
+    const jpeg = stripJpegMetadata(jpegCom(APP0, APP1_EXIF, DQT, SCAN));
+    const r = await uploadPhoto(session, signer, "fotos", jpeg, ids);
+    expect(r.status).toBe("saved");
+    expect(r.file).toMatch(/^\d{4}-\d{2}-\d{2}_\d{6}_[0-9a-f]{4}\.jpg$/);
+    const gravado = await readFile(join(base, "fotos", r.file));
+    expect(new Uint8Array(gravado)).toEqual(jpeg);
+    expect(gravado.includes(Buffer.from("GPS"))).toBe(false);
+  });
+
+  it("reenvio com o mesmo uploadId não duplica", async () => {
+    const { session, signer } = await parear();
+    const jpeg = jpegCom(APP0, DQT, SCAN);
+    const uploadId = randomUUID();
+    expect((await uploadPhoto(session, signer, "fotos", jpeg, ids, { uploadId })).status).toBe("saved");
+    expect((await uploadPhoto(session, signer, "fotos", jpeg, ids, { uploadId })).status).toBe("duplicate");
+    expect(await readdir(join(base, "fotos"))).toHaveLength(1);
+  });
+
+  it("pasta fora da lista vira mensagem clara", async () => {
+    const { session, signer } = await parear();
+    await expect(uploadPhoto(session, signer, "outra", jpegCom(APP0, DQT, SCAN), ids)).rejects.toMatchObject({
+      code: "unknown_folder",
+    });
+  });
+
+  it("arquivo que não é JPEG é recusado pelo PC", async () => {
+    const { session, signer } = await parear();
+    const falso = new TextEncoder().encode("<html>nao sou foto</html>");
+    await expect(uploadPhoto(session, signer, "fotos", falso, ids)).rejects.toMatchObject({ code: "content_mismatch" });
+    expect(await readdir(join(base, "fotos"))).toHaveLength(0);
+  });
+
+  it("acima de 25 MB nem sai do celular", async () => {
+    const { session, signer } = await parear();
+    await expect(
+      uploadPhoto(session, signer, "fotos", new Uint8Array(25 * 1024 * 1024 + 1), ids),
+    ).rejects.toMatchObject({ code: "too_large" });
   });
 });
 

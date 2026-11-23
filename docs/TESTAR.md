@@ -102,6 +102,26 @@ A primeira compilação demora (vários minutos). O app abre sozinho no celular.
 
 Me mande print ou o texto de qualquer erro.
 
+## Etapa 5 — Tirar foto e enviar (precisa de você)
+
+Depois da etapa 4 funcionando (app instalado e pareado). Se já instalou antes, rode `npx expo run:android` de novo na pasta `app` (entraram módulos nativos novos: manipulação de imagem e arquivos).
+
+1. Servidor rodando (`start:local` + `adb reverse tcp:47800 tcp:47800`, ou `start` com Tailscale).
+2. No app: **Tirar foto** → disparar → prévia.
+   - [ ] A prévia está **em pé/deitada do jeito certo** (não girada)
+   - [ ] Aparece o tamanho (lado maior 2048) e "sem localização"
+   - [ ] A pasta sugerida é a padrão (na primeira vez) e dá para trocar tocando em outra
+3. **Enviar**.
+   - [ ] "Foto enviada" com o nome do arquivo e a pasta
+   - [ ] Notificação "Foto recebida" no PC
+   - [ ] O arquivo está na pasta certa e abre normal no Windows
+   - [ ] Botão direito no arquivo → Propriedades → Detalhes: **sem GPS, sem modelo do celular**
+   - [ ] O Claude Code lê a foto pelo caminho (o "Pronto quando" da etapa)
+4. Tirar outra foto: [ ] a pasta sugerida agora é a última usada
+5. Erros:
+   - [ ] Servidor parado → mensagem de erro e botão "Tentar enviar de novo"; religar o servidor e tentar → chega **uma vez só**
+   - [ ] `folders remove` da pasta escolhida no PC e enviar → "Essa pasta não está mais na lista do PC"
+
 ## Próximas etapas
 
 (preenchido conforme as etapas forem implementadas)
