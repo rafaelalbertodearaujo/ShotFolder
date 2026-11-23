@@ -102,6 +102,19 @@ A primeira compilação demora (vários minutos). O app abre sozinho no celular.
 
 Me mande print ou o texto de qualquer erro.
 
+## Etapa 8 — Compartilhar da Galeria
+
+1. Na Galeria, abra uma foto → Compartilhar → **ShotFolder**.
+   - [ ] O ShotFolder abre na tela "1 foto para o PC", com a miniatura
+   - [ ] Escolha a pasta e toque em Enviar → "1 enviada(s) para o PC"
+   - [ ] No PC a foto chega como `.jpg`, sem GPS (Propriedades → Detalhes)
+   - [ ] A foto original continua na Galeria, igual
+2. Várias de uma vez: selecione 3 fotos na Galeria → Compartilhar → ShotFolder → [ ] chegam as 3
+3. HEIC: se a câmera do Samsung estiver salvando em HEIF (Câmera → Configurações → Formatos → "Fotos de alta eficiência"), compartilhe uma → [ ] chega como `.jpg`
+4. Cancelar: compartilhe e toque em "Cancelar" → [ ] nada vai para o PC
+5. Algo que não é foto (um PDF): [ ] o ShotFolder nem aparece na lista do Compartilhar (ou mostra "só recebe fotos")
+6. Se der erro ao abrir a foto compartilhada, me avise: bloqueei a permissão de ler o armazenamento, que só faria diferença em Android 12 ou mais antigo.
+
 ## Etapa 7 — Fila offline
 
 1. Bateria: Configurações → Aplicativos → ShotFolder → Bateria → **Sem restrições**. Sem isso, a Samsung "adormece" o app e a fila só anda com ele aberto.

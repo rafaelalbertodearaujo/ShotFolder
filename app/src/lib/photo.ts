@@ -26,7 +26,11 @@ function apagar(uri: string): void {
   }
 }
 
-export async function preparePhoto(originalUri: string): Promise<PreparedPhoto> {
+/**
+ * @param apagarOriginal true para a foto da câmera do app (temporária, com EXIF).
+ *   false para foto compartilhada da Galeria: o original é seu e nunca é tocado.
+ */
+export async function preparePhoto(originalUri: string, apagarOriginal = true): Promise<PreparedPhoto> {
   try {
     // Reduz já na decodificação: a foto cheia (50 MP em alguns Samsung) nem entra na memória.
     const ctx = ImageManipulator.manipulate(originalUri, { maxWidth: MAX_SIDE, maxHeight: MAX_SIDE });
@@ -35,7 +39,7 @@ export async function preparePhoto(originalUri: string): Promise<PreparedPhoto> 
     const bytes = stripJpegMetadata(await new File(salvo.uri).bytes());
     return { uri: salvo.uri, width: salvo.width, height: salvo.height, bytes };
   } finally {
-    apagar(originalUri); // a foto original (com EXIF) não fica no celular
+    if (apagarOriginal) apagar(originalUri); // a foto temporária da câmera (com EXIF) não fica no celular
   }
 }
 
