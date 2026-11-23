@@ -218,6 +218,37 @@ ShotFolder/
 - Quais pastas entram na lista inicial e qual é a padrão (respondido na etapa 3).
 - Limites exatos (25 MB, cota diária, 2048 px) ajustáveis depois de usar.
 
+## 10. Estado atual (23/11/2026) e próximos passos
+
+**Feito e no GitHub** (https://github.com/rafaelalbertodearaujo/ShotFolder): código de todas as etapas essenciais (1 a 10), mais o painel web (16), a notificação clicável (abre a pasta; botões "Ver foto" e "Abrir pasta") e o servidor em segundo plano. São 192 testes automáticos: 56 do protocolo, 91 do servidor e 45 do app.
+
+**Verificado de verdade no PC:** servidor, pareamento, CLI, segundo plano (atalho na Inicializar, vigia que religa), painel no navegador (excluir mandou para a Lixeira), `check` e `firewall`, pacote Android Hermes, `expo-doctor` 20/20, manifesto gerado pelo `prebuild`. O Rafael viu a notificação de foto recebida aparecer.
+
+**Nunca rodou no Samsung:** etapas 4 a 8 e 10. O Kotlin do Keystore (etapa 6) **nunca foi compilado** (o PC não tem Android SDK). O primeiro build vai revelar se há erro nele.
+
+**Decisões desta fase (o motivo está em cada etapa):**
+- Segundo plano por atalho na pasta Inicializar, não Serviço nem Agendador: aparece no Gerenciador de Tarefas e a notificação funciona.
+- Painel web só em 127.0.0.1, entrada por código de uso único; excluir vai para a Lixeira.
+- Fila em JSON + arquivos, não SQLite.
+- Toda foto passa pela fila.
+- A última lista de pastas fica guardada no celular para funcionar sem conexão.
+- Permissões do Android reduzidas a câmera, internet e vibração.
+- O Rafael escolheu a opção 1 do painel, sem ícone na bandeja.
+
+**Esperando o Rafael (passo a passo em `docs/TESTAR.md`):**
+1. Instalar o Tailscale no PC e no Samsung, com passkey ou 2FA na conta.
+2. Criar conta gratuita em expo.dev e rodar `npx eas-cli login` (para o APK pela nuvem), **ou** instalar o Android Studio (build local).
+3. No PowerShell como administrador, desativar as regras antigas: `Get-NetFirewallRule -DisplayName 'Node.js JavaScript Runtime' | Disable-NetFirewallRule`.
+4. Dizer as pastas reais e cadastrar com `folders add`. A configuração de teste usada até aqui fica no scratchpad do Claude, não em `%LOCALAPPDATA%`.
+5. Conferir se clicar na notificação abre a pasta.
+
+**Próximos passos (para o Claude):**
+1. Preparar o build do APK: `app/eas.json` com perfil `preview` (APK instalável, sem servidor de desenvolvimento) e `development`. Pronto quando: `npx eas-cli build -p android --profile preview` começa sem erro de configuração.
+2. Acompanhar o primeiro build e corrigir o que falhar (principalmente o Kotlin). Pronto quando: o APK instala no Samsung e abre.
+3. Teste geral com o Rafael, seguindo `docs/TESTAR.md`, da etapa 4 à 10; corrigir o que aparecer. Pronto quando: os itens das etapas 4 a 10 estão marcados.
+4. Depois do Tailscale: `install` sem `--local`, `shotfolder firewall --celular <IP>`, ACL de `docs/tailscale-acl.md`, `check` com 0 problemas.
+5. Opcionais (11 a 15 e 17), conforme o Rafael quiser.
+
 ## Verificação
 
 Cada etapa tem "Pronto quando". Testes automáticos (Vitest) cobrem protocolo e servidor; o que depende do celular fica em `docs/TESTAR.md` para você confirmar. Nada é dado como pronto sem teste, log ou sua confirmação.
