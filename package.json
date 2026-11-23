@@ -1,0 +1,17 @@
+{
+  "name": "shotfolder",
+  "private": true,
+  "description": "Envio seguro de fotos do celular Android direto para pastas escolhidas no PC Windows",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
+}

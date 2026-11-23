@@ -26,7 +26,7 @@ Decisões já tomadas com o Rafael: PC em **Node + TypeScript**; ao chegar, **no
 ## 2. Stack
 
 **PC (`server/`)**
-- Node LTS atual (24.x, a conferir) + TypeScript. Mesma linguagem do app, e o código do protocolo é compartilhado.
+- Node LTS (no PC hoje: 22.14, que funciona; atualizar para 24 LTS quando der) + TypeScript 5. Mesma linguagem do app, e o código do protocolo é compartilhado.
 - Fastify 5: valida o formato das requisições, limita o tamanho do corpo e tem `inject()` para testes sem rede.
 - `node:crypto` para verificar assinatura ECDSA P-256 (sem biblioteca de cripto extra).
 - Estado em `%LOCALAPPDATA%\ShotFolder\` (`config.json`, `devices.json`, `uploads-vistos.json`, `audit.jsonl`), com permissão NTFS só para o seu usuário.
@@ -101,7 +101,8 @@ câmera / Compartilhar                             escuta só em 100.x:47800 (Ta
 **Protocolo v1** (em `packages/protocol`):
 - `POST /v1/upload`, corpo = bytes da imagem (sem multipart, menos superfície de ataque). Cabeçalhos `X-SF-Device`, `X-SF-Upload` (UUID), `X-SF-Time`, `X-SF-Folder`, `X-SF-Sha256`, `X-SF-Signature`.
 - String assinada: `SHOTFOLDER-V1\nPOST\n/v1/upload\n<device>\n<upload>\n<time>\n<folder>\n<content-type>\n<tamanho>\n<sha256>`.
-- `GET /v1/folders` (assinado) devolve `[{id, nome}]` e a pasta padrão. O celular nunca vê caminhos do PC.
+- `GET /v1/folders` (assinado) devolve `[{id, nome}]` e a pasta padrão. O celular nunca vê caminhos do PC. Cabeçalhos `X-SF-Device`, `X-SF-Request` (UUID), `X-SF-Time`, `X-SF-Signature`; string assinada: `SHOTFOLDER-V1\nGET\n/v1/folders\n<device>\n<request>\n<time>`.
+- Regras de formato (em `packages/protocol/src/index.ts`): cabeçalho repetido é recusado; `Content-Type` tem de ser exatamente `image/jpeg`, `image/png` ou `image/webp`; `folderId` só minúsculas, dígitos e hífen (até 32); assinatura ECDSA P-256 em DER/base64; chave pública SPKI/DER em base64. O pacote tem duas entradas: `@shotfolder/protocol` (sem Node, serve ao app) e `@shotfolder/protocol/node` (verificação com `node:crypto`, só no PC).
 - `POST /v1/pair {token, publicKey, deviceName}` só aceito com pareamento pendente; o token é comparado em tempo constante.
 - QR: `shotfolder://pair?v=1&host=<ip-tailscale>&port=47800&t=<token>`; código de confirmação = 6 dígitos de SHA-256(token + chave pública).
 
@@ -121,7 +122,7 @@ ShotFolder/
 **Essenciais — MVP = etapas 0 a 5**
 
 0. **Preparação (você, à mão).** Pronto quando: `node -v` e `git -v` respondem; Tailscale nos dois aparelhos e `tailscale ping <celular>` funciona no PC; depuração USB ligada e `adb devices` lista o Samsung.
-1. **Repo + protocolo.** Workspaces, `packages/protocol` com string canônica e verificação. Pronto quando: `npm test` passa com vetores de teste (assinatura válida, campo alterado, horário fora da janela).
+1. ✅ **Repo + protocolo** (concluída: 45 testes passando; vetores fixos em `packages/protocol/test/vetores.json`, gerados por `gerar-vetores.mjs`). Workspaces, `packages/protocol` com string canônica e verificação. Pronto quando: `npm test` passa com vetores de teste (assinatura válida, campo alterado, horário fora da janela).
 2. **Servidor recebe foto assinada.** Fastify no IP do Tailscale, `/v1/upload`, `/v1/folders`, lista de pastas, nomes gerados, temp→mover, limites, `uploadId` persistido, `audit.jsonl`, notificação; `scripts/enviar-teste.ts` assina com chave em software cadastrada à mão. Pronto quando: o script manda uma foto e ela aparece na pasta com notificação; testes automáticos recusam traversal, tipo falso, arquivo grande demais, assinatura errada, repetição e `folderId` desconhecido.
 3. **Pareamento + CLI admin.** Admin em 127.0.0.1 com token local; `shotfolder pair` mostra QR no terminal e pede o código; `folders add/list`, `devices list/revoke`. Pronto quando: o script de teste pareia lendo o texto do QR; QR expirado ou reutilizado é recusado; aparelho revogado recebe 401.
 4. **App mínimo no celular.** Development build no Samsung, ler QR, parear (chave em software), listar pastas. Pronto quando: o celular aparece em `devices list` e mostra as pastas da lista.

@@ -14,6 +14,16 @@ Checklist do que depende do celular, do Windows ou de painéis externos. Marque 
 - [ ] Android Studio instalado (SDK + JDK 17) e `adb devices` lista o Samsung
 - [ ] Lista de pastas que podem receber fotos e qual é a padrão (mandar para o Claude; não vai para o repositório)
 
-## Etapa 2 em diante
+## Etapa 1 — Protocolo
+
+Nada a testar à mão: é só código com testes automáticos. Se quiser conferir, na pasta do projeto:
+
+```powershell
+npm test
+```
+
+Deve terminar com `45 passed`.
+
+## Próximas etapas
 
 (preenchido conforme as etapas forem implementadas)

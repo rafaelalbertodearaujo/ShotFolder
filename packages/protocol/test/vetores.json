@@ -1,0 +1,29 @@
+{
+  "aviso": "Chave SOMENTE DE TESTE, gerada por test/gerar-vetores.mjs. Nunca usar fora dos testes.",
+  "algoritmo": "ECDSA P-256 + SHA-256, assinatura DER, chave pública SPKI/DER em base64",
+  "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAErFcmm5o+Pcji1EQdA2f8uzG81jkLInXnjCoCRmyLu7HX3oqIIGeawPcRR3emeFwm+T7whjqbkVtZE5sEedym3Q==",
+  "privateKeyPkcs8": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgxee2lRn6u2buDI5TZJFpJfzy+QNsRsVhYYlS93jFevShRANCAASsVyabmj49yOLURB0DZ/y7MbzWOQsideeMKgJGbIu7sdfeioggZ5rA9xFHd6Z4XCb5PvCGOpuRW1kTmwR53Kbd",
+  "bodyUtf8": "foto de teste do ShotFolder",
+  "upload": {
+    "fields": {
+      "deviceId": "dev_TESTE_0001",
+      "uploadId": "3f2b8c1e-9a4d-4e6f-8b7a-1c2d3e4f5a6b",
+      "timestamp": "1795000000000",
+      "folderId": "shotfolder-docs",
+      "contentType": "image/jpeg",
+      "contentLength": "27",
+      "sha256": "cbd88d885b87ce6a08e9c7d7462e8e94f0af84035d2824ea755eec01bb1ed0ee"
+    },
+    "canonical": "SHOTFOLDER-V1\nPOST\n/v1/upload\ndev_TESTE_0001\n3f2b8c1e-9a4d-4e6f-8b7a-1c2d3e4f5a6b\n1795000000000\nshotfolder-docs\nimage/jpeg\n27\ncbd88d885b87ce6a08e9c7d7462e8e94f0af84035d2824ea755eec01bb1ed0ee",
+    "signature": "MEQCIFUx3l4/YVYeGJVxyryO8j50MPGuA9Yz+sG/JHnIv7QDAiAkLwo7pJv0fQk9nsmJJfJe2cmfMScgy9eE7slLWAlbjw=="
+  },
+  "folders": {
+    "fields": {
+      "deviceId": "dev_TESTE_0001",
+      "requestId": "0a1b2c3d-4e5f-4a7b-9c8d-7e6f5a4b3c2d",
+      "timestamp": "1795000000000"
+    },
+    "canonical": "SHOTFOLDER-V1\nGET\n/v1/folders\ndev_TESTE_0001\n0a1b2c3d-4e5f-4a7b-9c8d-7e6f5a4b3c2d\n1795000000000",
+    "signature": "MEQCIGUi/2oY/q9oyGkNdkN9RJL2sPuRHN9k8ftvx8rY9ixiAiARHwuxzrylJsS7pekXdSP5vexE0nXeY2HeLhhVt7x0Rg=="
+  }
+}
