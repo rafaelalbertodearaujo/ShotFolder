@@ -30,7 +30,7 @@ Decisões já tomadas com o Rafael: PC em **Node + TypeScript**; ao chegar, **no
 - Fastify 5: valida o formato das requisições, limita o tamanho do corpo e tem `inject()` para testes sem rede.
 - `node:crypto` para verificar assinatura ECDSA P-256 (sem biblioteca de cripto extra).
 - Estado em `%LOCALAPPDATA%\ShotFolder\` (`config.json`, `devices.json`, `uploads-vistos.json`, `audit.jsonl`), com permissão NTFS só para o seu usuário.
-- Segundo plano: **Agendador de Tarefas, "ao fazer logon", no seu usuário, sem janela, reiniciar se falhar.** Por quê não um Serviço do Windows: serviço roda na sessão 0, não consegue mostrar notificação e grava arquivos como outro usuário. Como você só usa com o PC ligado e logado, a tarefa agendada é mais simples e roda sem privilégio de administrador.
+- Segundo plano (**decisão revista em 23/11/2026**, a pedido do Rafael: ligar/desligar pelo Gerenciador de Tarefas): **atalho "ShotFolder" na pasta Inicializar do usuário**, que roda `conhost.exe --headless node cli.js daemon` (sem janela). Aparece em Gerenciador de Tarefas → Aplicativos de inicialização com Habilitar/Desabilitar; roda na sessão do usuário (a notificação funciona) e sem administrador. O `daemon` é um vigia que reinicia o servidor se ele cair (5 s, 10 s, 30 s, depois 60 s — cobre o Tailscale subindo depois do boot). Descartados: Serviço do Windows (sessão 0: sem notificação, grava como outro usuário) e Agendador de Tarefas (não aparece em Aplicativos de inicialização).
 - Notificação: `node-notifier` (usa SnoreToast) — a conferir se segue mantido; plano B: PowerShell chamando a API de toast.
 - Administração por CLI: `shotfolder pair | folders add/list/remove | devices list/revoke | log`. A CLI fala com o servidor num endereço local `127.0.0.1` usando um token aleatório gravado num arquivo que só o seu usuário lê (impede que um site no navegador mande comandos para o localhost).
 - Testes: Vitest.
@@ -117,7 +117,7 @@ ShotFolder/
   app/                 Expo SDK 58: src/app/ (telas), src/lib/ (crypto, api, storage), test/; depois app/modules/keystore/ (Kotlin)
   server/src/tools/    enviar-teste.ts (cliente de teste que faz o papel do celular)
   server/config.exemplo.json  modelo do config.json (o real fica em %LOCALAPPDATA%\ShotFolder)
-  scripts/             instalar-tarefa.ps1, firewall.ps1
+  scripts/             firewall.ps1 (etapa 9)
   docs/TESTAR.md       checklist do que o Rafael testa à mão
 ```
 
@@ -155,7 +155,10 @@ ShotFolder/
 6. **Chave no Keystore.** Módulo Kotlin: gerar par P-256 não exportável (StrongBox se houver, `setUnlockedDeviceRequired`), exportar a chave pública, assinar; re-parear. Pronto quando: envio funciona com a chave nova; a chave antiga foi revogada; com o celular bloqueado a assinatura falha.
 7. **Fila offline.** SQLite + cópia privada; envia ao abrir o app, quando a rede volta e por tarefa de fundo; repetição com espera crescente; "já recebido" conta como sucesso. Pronto quando: com o Tailscale desligado tiro 3 fotos, religo e as 3 chegam uma vez só.
 8. **Compartilhar da galeria.** Share intent → tela de confirmação com pasta → fila. Pronto quando: uma foto da Galeria e uma HEIC chegam como JPEG na pasta escolhida.
-9. **Segundo plano no Windows + cercas de rede.** `instalar-tarefa.ps1` (ao logon, sem janela, reinicia), regra de firewall, ACL no Tailscale (eu entrego o texto, você cola no painel), espera o Tailscale subir após o boot. Pronto quando: após reiniciar o PC, a foto chega sem abrir nada; outra máquina do tailnet e da LAN não conecta na porta.
+9. 🟡 **Segundo plano no Windows + cercas de rede** (segundo plano ✅ adiantado; **falta firewall e ACL do Tailscale**). regra de firewall, ACL no Tailscale (eu entrego o texto, você cola no painel), espera o Tailscale subir após o boot. Pronto quando: após reiniciar o PC, a foto chega sem abrir nada; outra máquina do tailnet e da LAN não conecta na porta.
+   - Feito: `shotfolder install [--local]` cria o atalho e já inicia; `uninstall` para e remove; `status` mostra servidor, vigia, se inicia com o Windows e onde está o log (`%LOCALAPPDATA%\ShotFolder\server.log`, gira em 5 MB); `stop` desliga agora (via API admin `POST /admin/shutdown`). Uma cópia só (arquivo `daemon.pid`; porta em uso = sai com código 3 e o vigia não insiste).
+   - Verificado de verdade (com uma pasta Inicializar de teste): processos sem janela, servidor derrubado à força voltou sozinho em 5 s, `install` repetido não duplica, `uninstall` não deixa processo nem atalho.
+   - Falta (próximas partes desta etapa): regra do Firewall do Windows e ACL do Tailscale. Observação: se a pasta do projeto mudar de lugar, rode `shotfolder install` de novo (o atalho aponta para o caminho atual).
 10. **Revogação e "perdi o celular".** Procedimento em `docs/` (revogar no PC → remover no Tailscale → Encontre Meu Dispositivo), `shotfolder log`. Pronto quando: você executa o roteiro num teste e o celular é recusado.
 
 **Opcionais (aprendizado e portfólio)**

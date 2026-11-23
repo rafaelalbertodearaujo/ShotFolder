@@ -23,6 +23,8 @@ export interface AdminDeps {
   publicPort: number;
   pairing: Pairing;
   now?: () => number;
+  /** Chamado por POST /admin/shutdown (shotfolder stop). */
+  onShutdown?: () => void;
 }
 
 const digest = (s: string) => createHash("sha256").update(s, "utf8").digest();
@@ -76,6 +78,21 @@ export async function buildAdminApp(deps: AdminDeps): Promise<FastifyInstance> {
       return reply.code(r.ok ? 200 : 409).send(r);
     },
   );
+
+  const startedAt = new Date(now()).toISOString();
+  app.get("/admin/status", async () => ({
+    pid: process.pid,
+    host: deps.publicHost,
+    port: deps.publicPort,
+    startedAt,
+  }));
+
+  app.post("/admin/shutdown", async (_req, reply) => {
+    await audit(deps.stateDir, now(), { event: "server_stop_requested" });
+    // Responde primeiro, depois desliga.
+    reply.raw.once("finish", () => setTimeout(() => deps.onShutdown?.(), 50));
+    return { ok: true };
+  });
 
   app.post("/admin/pair/cancel", async () => {
     deps.pairing.cancel();

@@ -122,6 +122,25 @@ Depois da etapa 4 funcionando (app instalado e pareado). Se já instalou antes, 
    - [ ] Servidor parado → mensagem de erro e botão "Tentar enviar de novo"; religar o servidor e tentar → chega **uma vez só**
    - [ ] `folders remove` da pasta escolhida no PC e enviar → "Essa pasta não está mais na lista do PC"
 
+## Rodar em segundo plano (parte da etapa 9, adiantada)
+
+Na pasta do projeto, depois de `npm run build`:
+
+1. Instalar. Enquanto não tiver Tailscale, com `--local` (depois de instalar o Tailscale, rode de novo sem o `--local`):
+   ```powershell
+   npm run cli -w @shotfolder/server -- install --local
+   ```
+   - [ ] Nenhuma janela fica aberta
+   - [ ] `npm run cli -w @shotfolder/server -- status` diz "Rodando" e "Vigia ativo"
+2. Gerenciador de Tarefas (Ctrl+Shift+Esc) → **Aplicativos de inicialização**:
+   - [ ] Aparece **ShotFolder** (anote o nome e o "Editor" que aparecem; o editor pode sair como Microsoft, porque quem abre é o conhost do Windows)
+   - [ ] Desabilitar → reiniciar o PC → `status` diz "parado"; Habilitar → reiniciar → volta sozinho
+3. Parar agora sem desinstalar: `npm run cli -w @shotfolder/server -- stop`
+4. Tirar de vez: `npm run cli -w @shotfolder/server -- uninstall`
+5. Se algo der errado, o log fica em `%LOCALAPPDATA%\ShotFolder\server.log` (ou `shotfolder status` mostra o caminho).
+
+Sem Tailscale e sem `--local`, o vigia fica tentando a cada 60 s e escrevendo "Tailscale não encontrado" no log — é o esperado.
+
 ## Próximas etapas
 
 (preenchido conforme as etapas forem implementadas)

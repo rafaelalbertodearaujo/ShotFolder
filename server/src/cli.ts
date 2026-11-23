@@ -2,7 +2,11 @@
 /**
  * Linha de comando do ShotFolder no PC.
  *
- *   shotfolder serve [--local]                       inicia o servidor
+ *   shotfolder serve [--local]                       inicia o servidor (nesta janela)
+ *   shotfolder install [--local]                     inicia com o Windows, sem janela
+ *   shotfolder uninstall                             para e tira da inicialização
+ *   shotfolder status | stop                         ver se está rodando / parar agora
+ *   shotfolder daemon [--local]                      vigia (usado pelo atalho de inicialização)
  *   shotfolder pair                                  mostra o QR e confirma o celular
  *   shotfolder folders list
  *   shotfolder folders add <codigo> <nome> <caminho> [--padrao]
@@ -22,7 +26,10 @@ import { renderUnicodeCompact } from "uqr";
 import { PATTERNS } from "@shotfolder/protocol";
 import { checkFolderPath, defaultForbiddenRoots } from "./files.js";
 import type { PairStatus } from "./pairing.js";
+import { daemon, DAEMON_FILES, readDaemonPid } from "./daemon.js";
 import { serve } from "./serve.js";
+import { createShortcut, launchCommand, removeShortcut, shortcutPath, startViaShortcut } from "./startup.js";
+import { existsSync } from "node:fs";
 import {
   audit,
   defaultStateDir,
@@ -209,10 +216,72 @@ async function pair(): Promise<void> {
   }
 }
 
+// ---------- rodar em segundo plano ----------
+
+async function adminTry(method: "GET" | "POST", path: string): Promise<unknown | null> {
+  try {
+    return await adminRequest(method, path);
+  } catch {
+    return null;
+  }
+}
+
+async function status(): Promise<void> {
+  const st = (await adminTry("GET", "/admin/status")) as { pid: number; host: string; port: number; startedAt: string } | null;
+  const vigia = await readDaemonPid(dir);
+  console.log(st ? `Rodando: http://${st.host}:${st.port} (pid ${st.pid}, desde ${st.startedAt})` : "Servidor parado.");
+  console.log(vigia ? `Vigia ativo (pid ${vigia}): reinicia o servidor se ele cair.` : "Vigia não está rodando.");
+  console.log(
+    existsSync(shortcutPath())
+      ? "Inicia com o Windows: sim (Gerenciador de Tarefas → Aplicativos de inicialização → ShotFolder)."
+      : "Inicia com o Windows: não (use shotfolder install).",
+  );
+  console.log(`Log: ${join(dir, DAEMON_FILES.log)}`);
+}
+
+async function stop(): Promise<boolean> {
+  const r = await adminTry("POST", "/admin/shutdown");
+  const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
+  // O vigia termina sozinho quando o servidor sai "de propósito". Se não terminar, encerra.
+  for (let i = 0; i < 20 && (await readDaemonPid(dir)); i++) await sleep(250);
+  const vigia = await readDaemonPid(dir);
+  if (vigia) {
+    try {
+      process.kill(vigia);
+    } catch {
+      // já saiu
+    }
+  }
+  return r !== null || vigia !== null;
+}
+
+async function install(flags: string[]): Promise<void> {
+  const cmd = launchCommand(flags);
+  createShortcut(cmd);
+  await audit(dir, Date.now(), { event: "startup_installed" });
+  console.log(`Atalho criado: ${shortcutPath()}`);
+  console.log("Ele aparece no Gerenciador de Tarefas → Aplicativos de inicialização → ShotFolder (dá para desabilitar lá).");
+  if (await readDaemonPid(dir)) {
+    console.log("Já estava rodando; nada a iniciar agora.");
+    return;
+  }
+  startViaShortcut();
+  console.log("Iniciado agora, sem janela. Confira com: shotfolder status");
+}
+
+async function uninstall(): Promise<void> {
+  const parou = await stop();
+  const removeu = await removeShortcut();
+  await audit(dir, Date.now(), { event: "startup_removed" });
+  console.log(parou ? "Servidor parado." : "Servidor já estava parado.");
+  console.log(removeu ? "Removido da inicialização do Windows." : "Não estava na inicialização do Windows.");
+}
+
 // ---------- roteamento ----------
 
 const AJUDA = `Uso:
   shotfolder serve [--local]
+  shotfolder install [--local] | uninstall | status | stop
   shotfolder pair
   shotfolder folders list | add <codigo> <nome> <caminho> [--padrao] | remove <codigo> | default <codigo>
   shotfolder devices list | revoke <deviceId>
@@ -225,6 +294,17 @@ async function main(argv: string[]): Promise<void> {
   switch (cmd) {
     case "serve":
       return serve(flags.has("--local"));
+    case "daemon":
+      return daemon(flags.has("--local") ? ["--local"] : []);
+    case "install":
+      return install(flags.has("--local") ? ["--local"] : []);
+    case "uninstall":
+      return uninstall();
+    case "status":
+      return status();
+    case "stop":
+      console.log((await stop()) ? "ShotFolder parado. (Na próxima vez que você entrar no Windows ele volta, se estiver habilitado.)" : "Já estava parado.");
+      return;
     case "pair":
       return pair();
     case "folders":

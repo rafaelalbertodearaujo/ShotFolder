@@ -12,6 +12,7 @@ import { existsSync } from "node:fs";
 import { promisify } from "node:util";
 import { buildAdminApp } from "./admin.js";
 import { buildApp, createPairing } from "./app.js";
+import { EXIT } from "./daemon.js";
 import { checkFolderPath, defaultForbiddenRoots } from "./files.js";
 import { isTailscaleIPv4 } from "./net.js";
 import { windowsToast } from "./notify.js";
@@ -57,7 +58,15 @@ export async function serve(local: boolean): Promise<void> {
 
   const pairing = createPairing(dir);
   const app = await buildApp({ stateDir: dir, notify: windowsToast, pairing });
-  await app.listen({ host, port: cfg.port });
+  try {
+    await app.listen({ host, port: cfg.port });
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "EADDRINUSE") {
+      console.error(`Porta ${cfg.port} já em uso: o ShotFolder já está rodando?`);
+      process.exit(EXIT.inUse);
+    }
+    throw e;
+  }
 
   // Token novo a cada partida; a CLI lê este arquivo para falar com a API admin.
   const token = randomBytes(32).toString("base64url");
@@ -69,18 +78,27 @@ export async function serve(local: boolean): Promise<void> {
     publicHost: host,
     publicPort: cfg.port,
     pairing,
+    onShutdown: () => stop(),
   });
-  await admin.listen({ host: "127.0.0.1", port: cfg.adminPort });
+  try {
+    await admin.listen({ host: "127.0.0.1", port: cfg.adminPort });
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "EADDRINUSE") {
+      console.error(`Porta admin ${cfg.adminPort} já em uso: o ShotFolder já está rodando?`);
+      process.exit(EXIT.inUse);
+    }
+    throw e;
+  }
 
   console.log(`ShotFolder ouvindo em http://${host}:${cfg.port} (estado em ${dir})`);
   console.log(`Admin local em http://127.0.0.1:${cfg.adminPort}. Para parear: shotfolder pair`);
 
-  const stop = () => {
+  function stop() {
     pairing.cancel();
     void Promise.all([app.close(), admin.close(), unlink(join(dir, FILES.adminToken)).catch(() => {})]).then(() =>
-      process.exit(0),
+      process.exit(EXIT.stopped),
     );
-  };
+  }
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
 }
