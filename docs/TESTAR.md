@@ -174,6 +174,15 @@ Sem Tailscale e sem `--local`, o vigia fica tentando a cada 60 s e escrevendo "T
 2. Segurança:
    - [ ] Copiar o link da barra de endereço e abrir em outra janela anônima → pede para rodar `shotfolder painel` (o link é de uso único)
 
+## Notificação clicável
+
+Mandei uma notificação de teste ("Teste do ShotFolder") apontando para a pasta `test-output` do projeto. Se ela ainda estiver na Central de Notificações (Win+N):
+- [ ] Clicar no corpo da notificação abre a pasta no Explorer
+- [ ] O botão **Ver foto** abre a foto no visualizador de imagens
+- [ ] O botão **Abrir pasta** abre a pasta
+
+Numa foto de verdade (do celular ou do `enviar-teste`), o mesmo vale para a pasta onde ela caiu.
+
 ## Regras antigas do Node no firewall (você roda, como administrador)
 
 O PC tem duas regras "Node.js JavaScript Runtime" que liberam o Node em qualquer porta na rede Pública. Você não usa o Node para mais nada, então pode desativar. Desativar não apaga: dá para religar depois. Num **PowerShell aberto como administrador**:

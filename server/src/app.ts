@@ -182,7 +182,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       try {
         const saved = await receive(f, req.body as Readable);
         await log({ event: "upload_saved", ...base, file: saved.file, bytes: Number(f.contentLength) });
-        notify("Foto recebida", `${saved.file} → ${saved.folderName}`);
+        notify("Foto recebida", `${saved.file} → ${saved.folderName}`, {
+          folderPath: saved.folderPath,
+          filePath: saved.filePath,
+        });
         return reply.code(201).send({ status: "saved", file: saved.file, folder: f.folderId });
       } catch (e) {
         if (e instanceof HttpError) {
@@ -197,7 +200,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     },
   );
 
-  async function receive(f: UploadFields, body: Readable): Promise<{ file: string; folderName: string }> {
+  async function receive(
+    f: UploadFields,
+    body: Readable,
+  ): Promise<{ file: string; folderName: string; folderPath: string; filePath: string }> {
     const cfg = await loadConfig(dir);
     const folder = cfg.folders.find((x) => x.id === f.folderId);
     if (!folder) throw new HttpError(404, "unknown_folder");
@@ -256,7 +262,12 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
             { deviceId: f.deviceId, folderId: f.folderId, file, at: new Date(t).toISOString(), bytes: size },
             t,
           );
-          return { file, folderName: folder.name };
+          return {
+            file,
+            folderName: folder.name,
+            folderPath: folder.path,
+            filePath: destinationPath(folder.path, file),
+          };
         } catch (e) {
           if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
         }

@@ -1,24 +1,55 @@
 /**
  * Notificação do Windows (toast) sem dependência externa: chama o PowerShell
  * do próprio Windows. Se falhar, a foto continua gravada; só não há aviso.
+ *
+ * Clique: a notificação usa ativação por "protocolo" com um link file:///, então
+ * clicar abre a pasta da foto no Explorer, e os botões abrem a foto ou a pasta.
+ * Quem abre é o próprio Windows; o ShotFolder não precisa estar ouvindo o clique.
  */
 import { spawn } from "node:child_process";
+import { pathToFileURL } from "node:url";
 
-export type Notifier = (title: string, body: string) => void;
+export interface NotifyOptions {
+  /** Pasta aberta ao clicar no corpo da notificação. */
+  folderPath?: string;
+  /** Arquivo aberto pelo botão "Ver foto". */
+  filePath?: string;
+}
+
+export type Notifier = (title: string, body: string, opts?: NotifyOptions) => void;
 
 export const noopNotifier: Notifier = () => {};
 
 const xmlEscape = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 
+/** file:///C:/... com espaços e acentos codificados. */
+export const fileUri = (path: string) => pathToFileURL(path).href;
+
+/** Monta o XML do toast (exportado para teste). */
+export function buildToastXml(title: string, body: string, opts: NotifyOptions = {}): string {
+  const launch = opts.folderPath ? ` activationType="protocol" launch="${xmlEscape(fileUri(opts.folderPath))}"` : "";
+  const acoes: string[] = [];
+  if (opts.filePath) {
+    acoes.push(`<action content="Ver foto" activationType="protocol" arguments="${xmlEscape(fileUri(opts.filePath))}"/>`);
+  }
+  if (opts.folderPath) {
+    acoes.push(`<action content="Abrir pasta" activationType="protocol" arguments="${xmlEscape(fileUri(opts.folderPath))}"/>`);
+  }
+  return (
+    `<toast${launch}><visual><binding template="ToastGeneric">` +
+    `<text>${xmlEscape(title)}</text><text>${xmlEscape(body)}</text>` +
+    `</binding></visual>` +
+    (acoes.length ? `<actions>${acoes.join("")}</actions>` : "") +
+    `</toast>`
+  );
+}
+
 /** Identificador do PowerShell, para o Windows aceitar o toast sem instalar nada. */
 const APP_ID = "{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe";
 
-export const windowsToast: Notifier = (title, body) => {
-  const xml =
-    `<toast><visual><binding template="ToastGeneric">` +
-    `<text>${xmlEscape(title)}</text><text>${xmlEscape(body)}</text>` +
-    `</binding></visual></toast>`;
+export const windowsToast: Notifier = (title, body, opts) => {
+  const xml = buildToastXml(title, body, opts);
   // O XML vai entre aspas simples do PowerShell: aspas simples viram duas.
   const script = [
     "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null",
