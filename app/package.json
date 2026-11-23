@@ -38,7 +38,8 @@
     "android": "expo run:android",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "export:android": "expo export --platform android"
+    "export:android": "expo export --platform android",
+    "eas-build-post-install": "npm run build -w @shotfolder/protocol --prefix .."
   },
   "private": true,
   "description": "App Android do ShotFolder",
