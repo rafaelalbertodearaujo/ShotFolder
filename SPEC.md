@@ -177,7 +177,10 @@ ShotFolder/
    - `shotfolder check`: verificação só de leitura — Tailscale conectado, Funnel/Serve desligados, servidor só no IP do Tailscale, vigia, inicialização, regras de firewall (e as antigas do `node.exe`), pastas válidas, quantos aparelhos ativos.
    - Verificado: 74 testes do servidor; `check` e `firewall` rodados de verdade; o script gerado passa no analisador do PowerShell. **Não verificado:** aplicar o script (exige administrador e o IP real do celular) e a ACL (exige a conta Tailscale).
    - Observação: se a pasta do projeto mudar de lugar, rode `shotfolder install` de novo (o atalho aponta para o caminho atual).
-10. **Revogação e "perdi o celular".** Procedimento em `docs/` (revogar no PC → remover no Tailscale → Encontre Meu Dispositivo), `shotfolder log`. Pronto quando: você executa o roteiro num teste e o celular é recusado.
+10. 🟡 **Revogação e "perdi o celular"** (roteiro pronto em `docs/perdi-o-celular.md`; **falta você executar o teste**). Procedimento em `docs/` (revogar no PC → remover no Tailscale → Encontre Meu Dispositivo), `shotfolder log`. Pronto quando: você executa o roteiro num teste e o celular é recusado.
+   - A revogação já existe na CLI (`devices revoke`, funciona com o servidor parado) e no painel (aba Aparelhos). O log aparece em `shotfolder log` e na aba Registro.
+
+**Situação em 23/11/2026:** todo o código das etapas essenciais (1 a 10) está escrito. As etapas 1 a 3 e o painel foram verificados de verdade no PC. As etapas 4 a 8 estão testadas no PC (192 testes no total, incluindo o app conversando com o servidor real), mas **ainda não rodaram no Samsung**. O próximo passo é o teste geral do Rafael, seguindo `docs/TESTAR.md`.
 
 **Opcionais (aprendizado e portfólio)**
 

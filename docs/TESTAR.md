@@ -102,6 +102,13 @@ A primeira compilação demora (vários minutos). O app abre sozinho no celular.
 
 Me mande print ou o texto de qualquer erro.
 
+## Etapa 10 — Teste do "perdi o celular"
+
+Siga `docs/perdi-o-celular.md` só com o passo 1 (revogar), sem apagar nada do celular:
+- [ ] Depois de revogar, o app mostra "O PC não reconhece este celular" ao atualizar as pastas, e uma foto enviada fica como "falhou"
+- [ ] O Registro do painel mostra "Aparelho revogado" e depois "Envio recusado"
+- Para voltar a usar: no app, "Esquecer pareamento" e parear de novo
+
 ## Etapa 8 — Compartilhar da Galeria
 
 1. Na Galeria, abra uma foto → Compartilhar → **ShotFolder**.
