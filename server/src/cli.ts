@@ -7,6 +7,8 @@
  *   shotfolder uninstall                             para e tira da inicialização
  *   shotfolder status | stop                         ver se está rodando / parar agora
  *   shotfolder daemon [--local]                      vigia (usado pelo atalho de inicialização)
+ *   shotfolder check                                 verificação de segurança e saúde
+ *   shotfolder firewall --celular <IP> [--pc <IP>]   gera o script do firewall (rodar como admin)
  *   shotfolder pair                                  mostra o QR e confirma o celular
  *   shotfolder folders list
  *   shotfolder folders add <codigo> <nome> <caminho> [--padrao]
@@ -30,6 +32,10 @@ import { daemon, DAEMON_FILES, readDaemonPid } from "./daemon.js";
 import { serve } from "./serve.js";
 import { createShortcut, launchCommand, removeShortcut, shortcutPath, startViaShortcut } from "./startup.js";
 import { existsSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
+import { printChecks, runChecks } from "./check.js";
+import { firewallScript } from "./firewall.js";
+import { detectTailscaleIp } from "./net.js";
 import {
   audit,
   defaultStateDir,
@@ -277,17 +283,56 @@ async function uninstall(): Promise<void> {
   console.log(removeu ? "Removido da inicialização do Windows." : "Não estava na inicialização do Windows.");
 }
 
+// ---------- segurança ----------
+
+async function check(): Promise<void> {
+  const st = (await adminTry("GET", "/admin/status")) as { host: string; port: number } | null;
+  printChecks(await runChecks(dir, st));
+}
+
+async function firewall(celular: string | undefined, pc: string | undefined): Promise<void> {
+  if (!celular) {
+    throw new UsageError(
+      "Informe o IP Tailscale do celular: shotfolder firewall --celular 100.x.y.z\n" +
+        "(ele aparece no app do Tailscale no celular, ou em https://login.tailscale.com/admin/machines)",
+    );
+  }
+  const pcIp = pc ?? (await detectTailscaleIp());
+  if (!pcIp) throw new UsageError("Não achei o IP Tailscale deste PC. O Tailscale está conectado? (ou informe --pc 100.x.y.z)");
+  const cfg = await loadConfig(dir);
+  const script = firewallScript({ phoneIp: celular, pcIp, port: cfg.port, nodePath: process.execPath });
+  const arquivo = join(dir, "firewall-shotfolder.ps1");
+  await writeFile(arquivo, "﻿" + script, "utf8"); // BOM: o PowerShell 5 lê acentos certo
+  console.log(`Script gerado: ${arquivo}\n`);
+  console.log("Abra o PowerShell como administrador e rode:\n");
+  console.log(`  powershell -ExecutionPolicy Bypass -File "${arquivo}"\n`);
+  console.log("Depois confira com: shotfolder check");
+}
+
 // ---------- roteamento ----------
 
 const AJUDA = `Uso:
   shotfolder serve [--local]
   shotfolder install [--local] | uninstall | status | stop
+  shotfolder check
+  shotfolder firewall --celular <IP Tailscale do celular> [--pc <IP Tailscale do PC>]
   shotfolder pair
   shotfolder folders list | add <codigo> <nome> <caminho> [--padrao] | remove <codigo> | default <codigo>
   shotfolder devices list | revoke <deviceId>
   shotfolder log [quantidade]`;
 
+/** Tira do argv as opções com valor (--celular X) e devolve o valor. */
+function opcao(argv: string[], nome: string): string | undefined {
+  const i = argv.indexOf(nome);
+  if (i < 0) return undefined;
+  const v = argv[i + 1];
+  argv.splice(i, 2);
+  return v;
+}
+
 async function main(argv: string[]): Promise<void> {
+  const celular = opcao(argv, "--celular");
+  const pc = opcao(argv, "--pc");
   const flags = new Set(argv.filter((a) => a.startsWith("--")));
   const [cmd, sub, ...rest] = argv.filter((a) => !a.startsWith("--"));
   await ensureStateDir(dir);
@@ -302,6 +347,10 @@ async function main(argv: string[]): Promise<void> {
       return uninstall();
     case "status":
       return status();
+    case "check":
+      return check();
+    case "firewall":
+      return firewall(celular, pc);
     case "stop":
       console.log((await stop()) ? "ShotFolder parado. (Na próxima vez que você entrar no Windows ele volta, se estiver habilitado.)" : "Já estava parado.");
       return;

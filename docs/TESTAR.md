@@ -141,6 +141,26 @@ Na pasta do projeto, depois de `npm run build`:
 
 Sem Tailscale e sem `--local`, o vigia fica tentando a cada 60 s e escrevendo "Tailscale não encontrado" no log — é o esperado.
 
+## Etapa 9 — Cercas de rede (depois do Tailscale instalado nos dois)
+
+1. Verificação geral, a qualquer momento:
+   ```powershell
+   npm run cli -w @shotfolder/server -- check
+   ```
+   Hoje ela já aponta: Tailscale ausente e regras antigas "Node.js JavaScript Runtime" liberando o Node em qualquer porta no perfil Público.
+2. Firewall: pegue o IP Tailscale do celular (app do Tailscale no celular, ou https://login.tailscale.com/admin/machines) e rode:
+   ```powershell
+   npm run cli -w @shotfolder/server -- firewall --celular 100.x.y.z
+   ```
+   Ele mostra um comando `powershell -ExecutionPolicy Bypass -File "...firewall-shotfolder.ps1"`. Rode-o num **PowerShell aberto como administrador**.
+   - [ ] `check` passa a dizer "Firewall: só o celular entra na porta do ShotFolder"
+3. ACL do Tailscale: siga `docs/tailscale-acl.md` (copie a política atual antes de trocar).
+   - [ ] O painel salvou sem erro nos `tests`
+4. Teste de fogo:
+   - [ ] Depois de reiniciar o PC, uma foto do celular chega sem você abrir nada
+   - [ ] De outro aparelho (outro PC no Wi-Fi ou no tailnet), `http://<IP do PC>:47800/v1/folders` **não abre**
+   - [ ] `check` termina com "0 problema(s)"
+
 ## Próximas etapas
 
 (preenchido conforme as etapas forem implementadas)

@@ -4,36 +4,16 @@
  *   serve --local   escuta só em 127.0.0.1 (teste no próprio PC)
  * Também sobe a API admin em 127.0.0.1:<adminPort> e grava um token novo em admin.token.
  */
-import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { existsSync } from "node:fs";
-import { promisify } from "node:util";
 import { buildAdminApp } from "./admin.js";
 import { buildApp, createPairing } from "./app.js";
 import { EXIT } from "./daemon.js";
 import { checkFolderPath, defaultForbiddenRoots } from "./files.js";
-import { isTailscaleIPv4 } from "./net.js";
+import { detectTailscaleIp, isTailscaleIPv4 } from "./net.js";
 import { windowsToast } from "./notify.js";
 import { defaultStateDir, ensureStateDir, FILES, loadConfig } from "./state.js";
-
-const run = promisify(execFile);
-
-async function detectTailscaleIp(): Promise<string | null> {
-  const candidates = ["C:\\Program Files\\Tailscale\\tailscale.exe", "tailscale"];
-  for (const exe of candidates) {
-    if (exe.includes("\\") && !existsSync(exe)) continue;
-    try {
-      const { stdout } = await run(exe, ["ip", "-4"], { windowsHide: true, timeout: 10_000 });
-      const ip = stdout.trim().split(/\s+/)[0];
-      if (ip) return ip;
-    } catch {
-      // tenta o próximo
-    }
-  }
-  return null;
-}
 
 export async function serve(local: boolean): Promise<void> {
   const dir = defaultStateDir();
