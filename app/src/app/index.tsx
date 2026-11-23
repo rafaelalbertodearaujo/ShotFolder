@@ -6,6 +6,7 @@ import { router } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Alert, FlatList, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { ApiError, listFolders, type FolderList } from "../lib/api";
+import { securityLevelLabel } from "../lib/keystore-signer";
 import { usePaired } from "../lib/paired-context";
 import { Botao, cores } from "../lib/ui";
 
@@ -73,6 +74,7 @@ export default function Inicio() {
         <Text style={s.suave}>
           {paired.deviceName} · {paired.session.deviceId}
         </Text>
+        <Text style={s.suave}>Chave guardada no {securityLevelLabel(paired.signer.securityLevel)}</Text>
       </View>
 
       <Botao onPress={() => router.push("/foto")}>Tirar foto</Botao>

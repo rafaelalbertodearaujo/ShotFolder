@@ -14,6 +14,7 @@ import { parsePairUri, type PairInfo } from "@shotfolder/protocol";
 import { ApiError, pairWithPc, safeDeviceName } from "../lib/api";
 import { pairCodeFor } from "../lib/crypto";
 import { usePaired } from "../lib/paired-context";
+import type { KeystoreSigner } from "../lib/keystore-signer";
 import { newSigner, savePaired } from "../lib/storage";
 import { Botao, cores } from "../lib/ui";
 
@@ -31,16 +32,22 @@ export default function Parear() {
   const { reload } = usePaired();
 
   async function iniciar(info: PairInfo) {
-    const signer = newSigner();
-    setEtapa({ tipo: "esperando", codigo: pairCodeFor(info.token, signer.publicKeySpki), host: info.host });
+    let signer: KeystoreSigner | null = null;
     try {
+      // A chave nasce dentro do Keystore; daqui só sai a parte pública.
+      signer = await newSigner();
+      setEtapa({ tipo: "esperando", codigo: pairCodeFor(info.token, signer.publicKeySpki), host: info.host });
       const deviceName = safeDeviceName(nome);
       const session = await pairWithPc(info, signer, deviceName);
       await savePaired(session, signer, deviceName);
       await reload();
       router.back();
     } catch (e) {
-      setEtapa({ tipo: "erro", mensagem: e instanceof ApiError ? e.message : "Erro inesperado no pareamento." });
+      signer?.destroy(); // pareamento não deu certo: a chave nova não serve para nada
+      setEtapa({
+        tipo: "erro",
+        mensagem: e instanceof ApiError ? e.message : signer ? "Erro inesperado no pareamento." : "Não consegui criar a chave no Keystore.",
+      });
     } finally {
       ocupado.current = false;
     }

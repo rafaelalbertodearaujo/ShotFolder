@@ -52,6 +52,7 @@ const MENSAGENS: Record<string, string> = {
   invalid_key: "Chave do aparelho inválida.",
   unauthorized: "O PC não reconhece este celular (revogado ou pareamento apagado). Pareie de novo.",
   network: "Não consegui falar com o PC. O Tailscale está ligado nos dois e o ShotFolder está rodando?",
+  key_locked: "O celular precisa estar desbloqueado para assinar o envio.",
   unknown_folder: "Essa pasta não está mais na lista do PC. Atualize as pastas.",
   folder_unavailable: "A pasta existe na lista, mas o PC não consegue gravar nela agora.",
   rate_limited: "Muitas fotos em pouco tempo. Espere um minuto.",
@@ -70,7 +71,16 @@ function erro(code: string, status?: number): ApiError {
   return new ApiError(code, MENSAGENS[code] ?? `Erro do PC: ${code}${status ? ` (${status})` : ""}`);
 }
 
-export const baseUrl = (s: { host: string; port: number }) => `http://${s.host}:${s.port}`;
+/** Assina; se o Keystore recusar (celular bloqueado), vira um erro "key_locked" tentável depois. */
+async function assinar(signer: Signer, texto: string): Promise<string> {
+  try {
+    return await signer.sign(texto);
+  } catch {
+    throw erro("key_locked");
+  }
+}
+
+export const baseUrl =(s: { host: string; port: number }) => `http://${s.host}:${s.port}`;
 
 type FetchFn = typeof fetch;
 
@@ -126,7 +136,7 @@ export async function listFolders(
   fetchFn: FetchFn = fetch,
 ): Promise<FolderList> {
   const fields = { deviceId: session.deviceId, requestId: ids.uuid(), timestamp: String(ids.now()) };
-  const signature = await signer.sign(buildFoldersCanonical(fields));
+  const signature = await assinar(signer, buildFoldersCanonical(fields));
   const { status, body } = await request(
     fetchFn,
     `${baseUrl(session)}${ROUTES.folders}`,
@@ -174,7 +184,7 @@ export async function uploadPhoto(
     contentLength: String(jpeg.length),
     sha256: sha256Hex(jpeg),
   };
-  const signature = await signer.sign(buildUploadCanonical(fields));
+  const signature = await assinar(signer, buildUploadCanonical(fields));
   const { status, body } = await request(
     opts.fetchFn ?? fetch,
     `${baseUrl(session)}${ROUTES.upload}`,

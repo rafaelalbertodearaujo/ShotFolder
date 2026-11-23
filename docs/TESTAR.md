@@ -102,6 +102,16 @@ A primeira compilação demora (vários minutos). O app abre sozinho no celular.
 
 Me mande print ou o texto de qualquer erro.
 
+## Etapa 6 — Chave no Keystore (junto com o primeiro build do app)
+
+O módulo Kotlin só compila no primeiro build (`npx expo run:android` ou EAS). **Se o build falhar, me mande a mensagem de erro**: é a parte que não consegui compilar daqui.
+
+- [ ] O build termina sem erro de Kotlin
+- [ ] Depois de parear, a tela inicial mostra "Chave guardada no chip de segurança separado (StrongBox)" ou "área segura do processador (TEE)"
+- [ ] Enviar uma foto funciona
+- [ ] Teste do bloqueio: com o app aberto, toque em "Atualizar pastas" e bloqueie a tela logo em seguida; ao desbloquear, se o pedido saiu depois do bloqueio, aparece "O celular precisa estar desbloqueado…" (pode ser difícil de pegar no tempo; não é obrigatório)
+- [ ] No PC, `devices list` mostra o celular; se você tinha pareado antes com a versão antiga, revogue o aparelho antigo
+
 ## Etapa 5 — Tirar foto e enviar (precisa de você)
 
 Depois da etapa 4 funcionando (app instalado e pareado). Se já instalou antes, rode `npx expo run:android` de novo na pasta `app` (entraram módulos nativos novos: manipulação de imagem e arquivos).

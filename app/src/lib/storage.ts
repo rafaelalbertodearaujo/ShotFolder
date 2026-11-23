@@ -1,59 +1,69 @@
 /**
  * Guarda o pareamento no SecureStore (criptografado com uma chave do Android Keystore).
- * No MVP isso inclui a chave privada em software; na etapa 6 ela sai daqui e passa a
- * viver só no Keystore.
+ *
+ * Etapa 6: a chave privada NÃO fica mais aqui. Ela vive só no Keystore (hardware) e
+ * o SecureStore guarda apenas o "apelido" dela, o endereço do PC e o deviceId.
  */
 import * as SecureStore from "expo-secure-store";
-import { getRandomValues } from "expo-crypto";
-import { SoftwareSigner, type Signer } from "./crypto";
+import { randomUUID } from "expo-crypto";
+import Keystore from "../../modules/shotfolder-keystore";
 import type { Session } from "./api";
+import { KeystoreSigner } from "./keystore-signer";
 
-const KEY = "shotfolder.session.v1";
+const KEY = "shotfolder.session.v2";
+const OLD_KEY = "shotfolder.session.v1"; // MVP: chave em software
+const LAST_FOLDER = "shotfolder.lastFolder.v1";
 
 interface Stored extends Session {
-  secretKeyHex: string;
+  keyAlias: string;
   deviceName: string;
 }
 
 export interface Paired {
   session: Session;
-  signer: Signer;
+  signer: KeystoreSigner;
   deviceName: string;
 }
 
-export const randomBytes = (n: number): Uint8Array => getRandomValues(new Uint8Array(n));
-
-export function newSigner(): SoftwareSigner {
-  return SoftwareSigner.generate(randomBytes);
+/** Cria a chave do aparelho no Keystore (um apelido novo a cada pareamento). */
+export function newSigner(): Promise<KeystoreSigner> {
+  return KeystoreSigner.create(Keystore, `shotfolder-device-${randomUUID()}`);
 }
 
-export async function savePaired(session: Session, signer: SoftwareSigner, deviceName: string): Promise<void> {
-  const data: Stored = { ...session, secretKeyHex: signer.secretHex(), deviceName };
+export async function savePaired(session: Session, signer: KeystoreSigner, deviceName: string): Promise<void> {
+  const anterior = await loadPaired();
+  const data: Stored = { ...session, keyAlias: signer.alias, deviceName };
   await SecureStore.setItemAsync(KEY, JSON.stringify(data));
+  // Pareou de novo: a chave antiga não serve mais para nada.
+  if (anterior && anterior.signer.alias !== signer.alias) anterior.signer.destroy();
 }
 
 export async function loadPaired(): Promise<Paired | null> {
+  // Pareamento do MVP (chave em software) não é mais aceito: apaga e pede para parear de novo.
+  if (await SecureStore.getItemAsync(OLD_KEY)) await SecureStore.deleteItemAsync(OLD_KEY);
   const raw = await SecureStore.getItemAsync(KEY);
   if (!raw) return null;
   try {
     const d = JSON.parse(raw) as Stored;
-    return {
-      session: { host: d.host, port: d.port, deviceId: d.deviceId },
-      signer: SoftwareSigner.fromSecretHex(d.secretKeyHex),
-      deviceName: d.deviceName,
-    };
+    const signer = KeystoreSigner.load(Keystore, d.keyAlias);
+    if (!signer) {
+      // A chave sumiu do Keystore (dados do app apagados): o pareamento não vale mais.
+      await SecureStore.deleteItemAsync(KEY);
+      return null;
+    }
+    return { session: { host: d.host, port: d.port, deviceId: d.deviceId }, signer, deviceName: d.deviceName };
   } catch {
     return null;
   }
 }
 
-/** Apaga só deste celular. Para cortar o acesso de verdade, revogue também no PC. */
+/** Apaga a chave e o pareamento deste celular. Para cortar o acesso de verdade, revogue também no PC. */
 export async function forgetPaired(): Promise<void> {
+  const p = await loadPaired();
+  p?.signer.destroy();
   await SecureStore.deleteItemAsync(KEY);
-  await SecureStore.deleteItemAsync("shotfolder.lastFolder.v1");
+  await SecureStore.deleteItemAsync(LAST_FOLDER);
 }
-
-const LAST_FOLDER = "shotfolder.lastFolder.v1";
 
 /** Última pasta usada (vira a sugestão da próxima foto). */
 export async function loadLastFolder(): Promise<string | null> {
