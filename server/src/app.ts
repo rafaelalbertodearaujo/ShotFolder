@@ -41,6 +41,8 @@ export interface AppDeps {
   forbiddenRoots?: string[];
   /** Pareamento compartilhado com a API admin. Se ausente, cria um. */
   pairing?: Pairing;
+  /** Registro de envios compartilhado com o painel (um dono só do arquivo). */
+  seen?: SeenStore;
 }
 
 /** Cria o pareamento que grava o aparelho aceito em devices.json. */
@@ -78,7 +80,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const pairing = deps.pairing ?? createPairing(dir, now);
   await ensureStateDir(dir);
   await cleanTmp(dir);
-  const seen = await SeenStore.open(dir);
+  const seen = deps.seen ?? (await SeenStore.open(dir));
 
   /** Envios em andamento (mesmo uploadId chegando duas vezes ao mesmo tempo). */
   const inFlight = new Set<string>();
@@ -249,7 +251,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         try {
           await copyFile(tmp, destinationPath(folder.path, file), constants.COPYFILE_EXCL);
           bytesToday.set(dayKey, (bytesToday.get(dayKey) ?? 0) + size);
-          await seen.add(f.uploadId, { deviceId: f.deviceId, folderId: f.folderId, file, at: new Date(t).toISOString() }, t);
+          await seen.add(
+            f.uploadId,
+            { deviceId: f.deviceId, folderId: f.folderId, file, at: new Date(t).toISOString(), bytes: size },
+            t,
+          );
           return { file, folderName: folder.name };
         } catch (e) {
           if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;

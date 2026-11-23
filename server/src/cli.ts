@@ -7,6 +7,7 @@
  *   shotfolder uninstall                             para e tira da inicialização
  *   shotfolder status | stop                         ver se está rodando / parar agora
  *   shotfolder daemon [--local]                      vigia (usado pelo atalho de inicialização)
+ *   shotfolder painel                                abre o painel no navegador
  *   shotfolder check                                 verificação de segurança e saúde
  *   shotfolder firewall --celular <IP> [--pc <IP>]   gera o script do firewall (rodar como admin)
  *   shotfolder pair                                  mostra o QR e confirma o celular
@@ -30,7 +31,15 @@ import { checkFolderPath, defaultForbiddenRoots } from "./files.js";
 import type { PairStatus } from "./pairing.js";
 import { daemon, DAEMON_FILES, readDaemonPid } from "./daemon.js";
 import { serve } from "./serve.js";
-import { createShortcut, launchCommand, removeShortcut, shortcutPath, startViaShortcut } from "./startup.js";
+import {
+  createShortcut,
+  launchCommand,
+  panelShortcutPath,
+  removeShortcut,
+  shortcutPath,
+  startViaShortcut,
+} from "./startup.js";
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { printChecks, runChecks } from "./check.js";
@@ -264,9 +273,11 @@ async function stop(): Promise<boolean> {
 async function install(flags: string[]): Promise<void> {
   const cmd = launchCommand(flags);
   createShortcut(cmd);
+  createShortcut(launchCommand([], "painel"), panelShortcutPath(), "ShotFolder: abre o painel no navegador");
   await audit(dir, Date.now(), { event: "startup_installed" });
   console.log(`Atalho criado: ${shortcutPath()}`);
   console.log("Ele aparece no Gerenciador de Tarefas → Aplicativos de inicialização → ShotFolder (dá para desabilitar lá).");
+  console.log('Painel: Menu Iniciar → "ShotFolder Painel" (ou shotfolder painel).');
   if (await readDaemonPid(dir)) {
     console.log("Já estava rodando; nada a iniciar agora.");
     return;
@@ -278,9 +289,25 @@ async function install(flags: string[]): Promise<void> {
 async function uninstall(): Promise<void> {
   const parou = await stop();
   const removeu = await removeShortcut();
+  await removeShortcut(panelShortcutPath());
   await audit(dir, Date.now(), { event: "startup_removed" });
   console.log(parou ? "Servidor parado." : "Servidor já estava parado.");
   console.log(removeu ? "Removido da inicialização do Windows." : "Não estava na inicialização do Windows.");
+}
+
+// ---------- painel ----------
+
+async function painel(): Promise<void> {
+  const r = (await adminTry("POST", "/admin/panel/session")) as { code: string } | null;
+  if (!r) throw new UsageError("O ShotFolder não está rodando. Inicie com: shotfolder install (ou serve)");
+  const cfg = await loadConfig(dir);
+  const url = `http://127.0.0.1:${cfg.adminPort}/painel/entrar?c=${r.code}`;
+  // O link vale 60 s e uma vez só; o explorer.exe abre no navegador padrão.
+  const child = spawn("explorer.exe", [url], { detached: true, stdio: "ignore" });
+  child.on("error", () => {});
+  child.unref();
+  console.log("Painel aberto no navegador. (Se não abriu, cole este link em até 60 s:)");
+  console.log(url);
 }
 
 // ---------- segurança ----------
@@ -314,7 +341,7 @@ async function firewall(celular: string | undefined, pc: string | undefined): Pr
 const AJUDA = `Uso:
   shotfolder serve [--local]
   shotfolder install [--local] | uninstall | status | stop
-  shotfolder check
+  shotfolder painel | check
   shotfolder firewall --celular <IP Tailscale do celular> [--pc <IP Tailscale do PC>]
   shotfolder pair
   shotfolder folders list | add <codigo> <nome> <caminho> [--padrao] | remove <codigo> | default <codigo>
@@ -347,6 +374,8 @@ async function main(argv: string[]): Promise<void> {
       return uninstall();
     case "status":
       return status();
+    case "painel":
+      return painel();
     case "check":
       return check();
     case "firewall":

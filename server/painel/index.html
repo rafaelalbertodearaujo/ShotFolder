@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ShotFolder · Painel</title>
+    <link rel="stylesheet" href="/painel/painel.css" />
+    <script src="/painel/painel.js" defer></script>
+  </head>
+  <body>
+    <header class="topo">
+      <div class="marca">
+        <span class="logo" aria-hidden="true"></span>
+        <h1>ShotFolder</h1>
+      </div>
+      <div id="estado" class="estado" role="status">
+        <span class="ponto"></span><span id="estado-texto">Carregando…</span>
+      </div>
+    </header>
+
+    <nav class="abas" aria-label="Seções">
+      <button type="button" class="aba ativa" data-aba="fotos">Fotos</button>
+      <button type="button" class="aba" data-aba="aparelhos">Aparelhos</button>
+      <button type="button" class="aba" data-aba="pastas">Pastas</button>
+      <button type="button" class="aba" data-aba="registro">Registro</button>
+    </nav>
+
+    <main>
+      <section id="sec-fotos" class="secao">
+        <div class="filtros">
+          <label>Pasta
+            <select id="filtro-pasta"><option value="">Todas</option></select>
+          </label>
+          <label class="check"><input type="checkbox" id="filtro-excluidas" /> Mostrar as que foram para a Lixeira</label>
+          <span id="contagem" class="suave"></span>
+        </div>
+        <div id="fotos" class="grade"></div>
+        <p id="fotos-vazio" class="vazio" hidden>Nenhuma foto recebida ainda. Tire uma pelo app no celular.</p>
+      </section>
+
+      <section id="sec-aparelhos" class="secao" hidden>
+        <p class="suave">Para parear um celular novo, rode <code>shotfolder pair</code> no PC.</p>
+        <table class="tabela">
+          <thead><tr><th>Nome</th><th>Identificador</th><th>Pareado em</th><th>Situação</th><th></th></tr></thead>
+          <tbody id="aparelhos"></tbody>
+        </table>
+      </section>
+
+      <section id="sec-pastas" class="secao" hidden>
+        <p class="suave">Para mudar a lista: <code>shotfolder folders add | remove | default</code>.</p>
+        <table class="tabela">
+          <thead><tr><th>Nome</th><th>Código</th><th>Caminho no PC</th><th>Situação</th></tr></thead>
+          <tbody id="pastas"></tbody>
+        </table>
+      </section>
+
+      <section id="sec-registro" class="secao" hidden>
+        <p class="suave">Últimos 150 eventos, do mais novo para o mais antigo.</p>
+        <table class="tabela registro">
+          <thead><tr><th>Quando</th><th>Evento</th><th>Detalhes</th></tr></thead>
+          <tbody id="registro"></tbody>
+        </table>
+      </section>
+    </main>
+
+    <div id="aviso" class="aviso" role="alert" hidden></div>
+  </body>
+</html>

@@ -184,6 +184,9 @@ export interface SeenEntry {
   folderId: string;
   file: string;
   at: string;
+  bytes?: number;
+  /** Preenchido quando a foto foi mandada para a Lixeira pelo painel. */
+  deletedAt?: string;
 }
 
 /** Quanto tempo lembrar de um uploadId (a fila do celular pode reenviar dias depois). */
@@ -209,6 +212,20 @@ export class SeenStore {
     for (const [id, e] of Object.entries(this.entries)) {
       if (nowMs - Date.parse(e.at) > SEEN_RETENTION_MS) delete this.entries[id];
     }
+    await writeJson(this.file, this.entries);
+  }
+
+  /** Envios lembrados, do mais novo para o mais antigo. */
+  list(): Array<SeenEntry & { uploadId: string }> {
+    return Object.entries(this.entries)
+      .map(([uploadId, e]) => ({ uploadId, ...e }))
+      .sort((a, b) => b.at.localeCompare(a.at));
+  }
+
+  async markDeleted(uploadId: string, nowMs: number): Promise<void> {
+    const e = this.get(uploadId);
+    if (!e) return;
+    e.deletedAt = new Date(nowMs).toISOString();
     await writeJson(this.file, this.entries);
   }
 }

@@ -28,19 +28,27 @@ export function startupDir(): string {
 
 export const shortcutPath = () => join(startupDir(), SHORTCUT_NAME);
 
+/** Atalho "ShotFolder Painel" no Menu Iniciar (abre o painel no navegador). */
+export function panelShortcutPath(): string {
+  if (process.env.SHOTFOLDER_STARTMENU_DIR) return join(process.env.SHOTFOLDER_STARTMENU_DIR, "ShotFolder Painel.lnk");
+  const appdata = process.env.APPDATA;
+  if (!appdata) throw new Error("Variável APPDATA não definida.");
+  return join(appdata, "Microsoft", "Windows", "Start Menu", "Programs", "ShotFolder Painel.lnk");
+}
+
 export interface LaunchCommand {
   target: string;
   args: string[];
   workingDir: string;
 }
 
-/** Comando que o atalho executa. */
-export function launchCommand(daemonFlags: string[]): LaunchCommand {
+/** Comando que o atalho executa (`daemon` na inicialização, `painel` no Menu Iniciar). */
+export function launchCommand(flags: string[], comando: "daemon" | "painel" = "daemon"): LaunchCommand {
   const cli = fileURLToPath(new URL("./cli.js", import.meta.url));
   const conhost = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "conhost.exe");
   return {
     target: conhost,
-    args: ["--headless", process.execPath, cli, "daemon", ...daemonFlags],
+    args: ["--headless", process.execPath, cli, comando, ...flags],
     // raiz do projeto (server/dist/.. /..)
     workingDir: resolve(dirname(cli), "..", ".."),
   };
@@ -52,13 +60,17 @@ export function quoteArgs(args: string[]): string {
 }
 
 /** Cria (ou recria) o atalho. Os valores vão por variável de ambiente: nada é interpretado pelo PowerShell. */
-export function createShortcut(cmd: LaunchCommand): void {
+export function createShortcut(
+  cmd: LaunchCommand,
+  path: string = shortcutPath(),
+  descricao = "ShotFolder: recebe fotos do celular",
+): void {
   const script = [
     "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:SF_LNK)",
     "$s.TargetPath = $env:SF_TARGET",
     "$s.Arguments = $env:SF_ARGS",
     "$s.WorkingDirectory = $env:SF_WORKDIR",
-    "$s.Description = 'ShotFolder: recebe fotos do celular'",
+    "$s.Description = $env:SF_DESC",
     "$s.IconLocation = $env:SF_ICON",
     "$s.WindowStyle = 7",
     "$s.Save()",
@@ -68,21 +80,22 @@ export function createShortcut(cmd: LaunchCommand): void {
     encoding: "utf8",
     env: {
       ...process.env,
-      SF_LNK: shortcutPath(),
+      SF_LNK: path,
       SF_TARGET: cmd.target,
       SF_ARGS: quoteArgs(cmd.args),
       SF_WORKDIR: cmd.workingDir,
+      SF_DESC: descricao,
       SF_ICON: `${process.execPath},0`,
     },
   });
-  if (r.status !== 0 || !existsSync(shortcutPath())) {
+  if (r.status !== 0 || !existsSync(path)) {
     throw new Error(`Não consegui criar o atalho: ${r.stderr || r.stdout}`);
   }
 }
 
-export async function removeShortcut(): Promise<boolean> {
+export async function removeShortcut(path: string = shortcutPath()): Promise<boolean> {
   try {
-    await unlink(shortcutPath());
+    await unlink(path);
     return true;
   } catch {
     return false;

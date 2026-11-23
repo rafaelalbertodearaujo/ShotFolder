@@ -13,7 +13,7 @@ import { EXIT } from "./daemon.js";
 import { checkFolderPath, defaultForbiddenRoots } from "./files.js";
 import { detectTailscaleIp, isTailscaleIPv4 } from "./net.js";
 import { windowsToast } from "./notify.js";
-import { defaultStateDir, ensureStateDir, FILES, loadConfig } from "./state.js";
+import { defaultStateDir, ensureStateDir, FILES, loadConfig, SeenStore } from "./state.js";
 
 export async function serve(local: boolean): Promise<void> {
   const dir = defaultStateDir();
@@ -37,7 +37,8 @@ export async function serve(local: boolean): Promise<void> {
   }
 
   const pairing = createPairing(dir);
-  const app = await buildApp({ stateDir: dir, notify: windowsToast, pairing });
+  const seen = await SeenStore.open(dir);
+  const app = await buildApp({ stateDir: dir, notify: windowsToast, pairing, seen });
   try {
     await app.listen({ host, port: cfg.port });
   } catch (e) {
@@ -59,6 +60,7 @@ export async function serve(local: boolean): Promise<void> {
     publicPort: cfg.port,
     pairing,
     onShutdown: () => stop(),
+    seen,
   });
   try {
     await admin.listen({ host: "127.0.0.1", port: cfg.adminPort });

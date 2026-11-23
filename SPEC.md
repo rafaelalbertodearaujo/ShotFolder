@@ -172,7 +172,11 @@ ShotFolder/
 13. Fator extra para admin: TOTP como exercício (só para parear/adicionar pasta, nunca para revogar, com códigos de recuperação e anti-repetição) e/ou admin pelo celular com chave Keystore que exige digital. Pronto quando: os testes de ambos passam e o README explica os limites.
 14. Atestação de chave Android (o PC confirma que a chave está em hardware). Pronto quando: pareamento registra "StrongBox/TEE verificado".
 15. Modo LAN sem Tailscale com TLS fixado no pareamento (só se o Tailscale atrapalhar).
-16. Ícone na bandeja com status, último envio e "parear".
+16. ✅ **Painel web local** (decidido em 23/11/2026: opção 1, página no navegador, sem ícone na bandeja). `shotfolder painel` ou o atalho "ShotFolder Painel" no Menu Iniciar (criado pelo `install`) abre `http://127.0.0.1:<adminPort>/painel/`. Abas: Fotos (miniatura, pasta, horário, tamanho, aparelho; Abrir, Mostrar na pasta, Excluir → **Lixeira**), Aparelhos (revogar), Pastas (só leitura, com o caminho e se está válida), Registro (últimos 150 eventos).
+   - Segurança (`server/src/panel.ts`): entrada por código de uso único (60 s) que só a CLI gera com o token local → cookie `HttpOnly; SameSite=Strict` de 12 h; ações exigem `X-SF-CSRF` + Origin do próprio painel; `Host` exato; CSP sem script inline; a página monta tudo com `textContent`. Excluir só vale para fotos registradas pelo ShotFolder, com nome no padrão gerado, numa pasta da lista, e vai para a Lixeira (`server/src/recycle.ts`).
+   - Arquivos da página em `server/painel/` (HTML, CSS e JS puros). O registro de envios (`SeenStore`) agora é um só, compartilhado entre servidor e painel, e guarda o tamanho e se foi para a Lixeira.
+   - Verificado: 89 testes do servidor (inclui CSRF ausente, Origin de outro site, `Sec-Fetch-Site: cross-site`, Host falso, código reutilizado, caminho no lugar do id, registro adulterado); no navegador, com 3 fotos reais: lista, miniaturas, excluir (o arquivo saiu da pasta e apareceu na Lixeira do Windows), abas Aparelhos e Registro, console sem erros.
+   - Fica para depois, se quiser: parear e editar pastas pelo painel (hoje só pela CLI).
 17. Portfólio: README com diagrama, `SECURITY.md` com este modelo de ameaças, script de "ataques" automatizados, revisão de segurança antes de divulgar.
 
 ## 7. Riscos

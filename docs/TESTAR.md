@@ -161,6 +161,32 @@ Sem Tailscale e sem `--local`, o vigia fica tentando a cada 60 s e escrevendo "T
    - [ ] De outro aparelho (outro PC no Wi-Fi ou no tailnet), `http://<IP do PC>:47800/v1/folders` **não abre**
    - [ ] `check` termina com "0 problema(s)"
 
+## Painel web
+
+1. Com o ShotFolder rodando, abra o painel com o comando abaixo ou pelo Menu Iniciar → **ShotFolder Painel** (o atalho aparece depois de rodar `install` de novo):
+   ```powershell
+   npm run cli -w @shotfolder/server -- painel
+   ```
+   - [ ] O navegador abre o painel sozinho
+   - [ ] Aba Fotos: as fotos recebidas aparecem com miniatura
+   - [ ] "Mostrar na pasta" abre o Explorer com a foto selecionada
+   - [ ] "Excluir" pede confirmação e a foto aparece na Lixeira do Windows
+2. Segurança:
+   - [ ] Copiar o link da barra de endereço e abrir em outra janela anônima → pede para rodar `shotfolder painel` (o link é de uso único)
+
+## Regras antigas do Node no firewall (você roda, como administrador)
+
+O PC tem duas regras "Node.js JavaScript Runtime" que liberam o Node em qualquer porta na rede Pública. Você não usa o Node para mais nada, então pode desativar. Desativar não apaga: dá para religar depois. Num **PowerShell aberto como administrador**:
+
+```powershell
+Get-NetFirewallRule -DisplayName 'Node.js JavaScript Runtime' | Disable-NetFirewallRule
+```
+
+Para desfazer: o mesmo comando trocando `Disable-NetFirewallRule` por `Enable-NetFirewallRule`.
+
+- [ ] `npm run cli -w @shotfolder/server -- check` deixa de mostrar o problema das regras antigas
+- Se o Windows perguntar se deve "permitir o Node.js" na rede, clique em **Cancelar**. Depois do Tailscale, a porta do ShotFolder é liberada pela regra própria dele (`shotfolder firewall`), só para o seu celular.
+
 ## Próximas etapas
 
 (preenchido conforme as etapas forem implementadas)
