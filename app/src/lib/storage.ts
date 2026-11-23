@@ -63,6 +63,30 @@ export async function forgetPaired(): Promise<void> {
   p?.signer.destroy();
   await SecureStore.deleteItemAsync(KEY);
   await SecureStore.deleteItemAsync(LAST_FOLDER);
+  await SecureStore.deleteItemAsync(FOLDER_CACHE);
+}
+
+const FOLDER_CACHE = "shotfolder.folders.v1";
+
+export interface FolderCache {
+  folders: Array<{ id: string; name: string }>;
+  defaultFolder: string | null;
+  at: number;
+}
+
+/** Última lista de pastas recebida do PC (para escolher a pasta mesmo sem conexão). */
+export async function saveFolderCache(c: FolderCache): Promise<void> {
+  await SecureStore.setItemAsync(FOLDER_CACHE, JSON.stringify(c));
+}
+
+export async function loadFolderCache(): Promise<FolderCache | null> {
+  const raw = await SecureStore.getItemAsync(FOLDER_CACHE);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as FolderCache;
+  } catch {
+    return null;
+  }
 }
 
 /** Última pasta usada (vira a sugestão da próxima foto). */

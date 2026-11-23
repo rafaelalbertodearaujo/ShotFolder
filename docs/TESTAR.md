@@ -102,6 +102,18 @@ A primeira compilação demora (vários minutos). O app abre sozinho no celular.
 
 Me mande print ou o texto de qualquer erro.
 
+## Etapa 7 — Fila offline
+
+1. Bateria: Configurações → Aplicativos → ShotFolder → Bateria → **Sem restrições**. Sem isso, a Samsung "adormece" o app e a fila só anda com ele aberto.
+2. PC desligado ou servidor parado (`npm run cli -w @shotfolder/server -- stop`):
+   - [ ] Tire 3 fotos e envie: aparece "Foto na fila"; a tela inicial mostra "Fila de envio (3)"
+   - [ ] A escolha de pasta funciona mesmo sem o PC (aviso "usando a lista de pastas de …")
+3. Ligue o servidor de novo:
+   - [ ] Com o app aberto, as 3 chegam sozinhas em até ~20 s (ou toque em "Enviar todas agora")
+   - [ ] No PC, cada foto aparece **uma vez só**; a fila do celular esvazia
+4. Fundo (opcional, demora): fila com fotos, app fechado, servidor ligado → [ ] em até ~15–30 min as fotos chegam sem abrir o app (o Android decide a hora)
+5. Falha definitiva: no PC, `folders remove` da pasta escolhida e envie uma foto → [ ] ela fica como "falhou" com o motivo; "Descartar" apaga
+
 ## Etapa 6 — Chave no Keystore (junto com o primeiro build do app)
 
 O módulo Kotlin só compila no primeiro build (`npx expo run:android` ou EAS). **Se o build falhar, me mande a mensagem de erro**: é a parte que não consegui compilar daqui.

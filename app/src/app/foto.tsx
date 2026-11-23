@@ -1,5 +1,5 @@
 /**
- * Tirar foto → revisar → escolher a pasta → enviar.
+ * Tirar foto → revisar → escolher a pasta → enviar (pela fila).
  *
  * Tudo nesta tela, sem parâmetros de rota: um link externo não consegue mandar
  * um arquivo qualquer do celular para o PC.
@@ -9,61 +9,40 @@ import { randomUUID } from "expo-crypto";
 import { router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { ApiError, listFolders, uploadPhoto, type Folder, type UploadResult } from "../lib/api";
+import type { UploadResult } from "../lib/api";
+import { FolderPicker } from "../lib/folder-picker";
 import { usePaired } from "../lib/paired-context";
 import { discardPhoto, preparePhoto, type PreparedPhoto } from "../lib/photo";
-import { loadLastFolder, saveLastFolder } from "../lib/storage";
+import { useQueue } from "../lib/queue-context";
+import { saveLastFolder } from "../lib/storage";
 import { Botao, cores } from "../lib/ui";
+import { useFolders } from "../lib/use-folders";
 
 type Fase =
   | { tipo: "camera" }
   | { tipo: "processando" }
   | { tipo: "revisao"; foto: PreparedPhoto }
-  | { tipo: "enviando"; foto: PreparedPhoto }
+  | { tipo: "enviando" }
   | { tipo: "pronto"; resultado: UploadResult; pasta: string }
-  | { tipo: "erro"; mensagem: string; foto: PreparedPhoto | null };
+  | { tipo: "na_fila"; motivo: string; falhou: boolean }
+  | { tipo: "erro"; mensagem: string };
 
 const kb = (n: number) => `${Math.round(n / 1024)} KB`;
 
 export default function Foto() {
   const { paired } = usePaired();
+  const { enqueueAndSend, items } = useQueue();
+  const pastas = useFolders();
   const [permissao, pedirPermissao] = useCameraPermissions();
   const camera = useRef<CameraView>(null);
   const [cameraPronta, setCameraPronta] = useState(false);
   const [fase, setFase] = useState<Fase>({ tipo: "camera" });
-  const [pastas, setPastas] = useState<Folder[]>([]);
-  const [pasta, setPasta] = useState<string | null>(null);
-  const [erroPastas, setErroPastas] = useState<string | null>(null);
-  /** Mesmo id em todas as tentativas da mesma foto: reenviar não duplica no PC. */
+  /** Um id por foto: é ele que impede duplicar no PC em qualquer reenvio. */
   const uploadId = useRef<string>(randomUUID());
 
-  // Carrega as pastas e escolhe: última usada → padrão do PC → primeira.
-  useEffect(() => {
-    if (!paired) return;
-    let vivo = true;
-    (async () => {
-      try {
-        const lista = await listFolders(paired.session, paired.signer, { now: Date.now, uuid: randomUUID });
-        const ultima = await loadLastFolder();
-        if (!vivo) return;
-        setPastas(lista.folders);
-        const ids = lista.folders.map((f) => f.id);
-        setPasta(
-          ultima && ids.includes(ultima) ? ultima : lista.defaultFolder && ids.includes(lista.defaultFolder) ? lista.defaultFolder : (ids[0] ?? null),
-        );
-      } catch (e) {
-        if (vivo) setErroPastas(e instanceof ApiError ? e.message : "Não consegui carregar as pastas.");
-      }
-    })();
-    return () => {
-      vivo = false;
-    };
-  }, [paired]);
-
-  // Ao sair da tela, apaga a foto temporária que ainda estiver na memória.
-  const fotoAtual = fase.tipo === "revisao" || fase.tipo === "enviando" ? fase.foto : fase.tipo === "erro" ? fase.foto : null;
+  // Ao sair da tela sem enviar, apaga a foto temporária.
   const fotoRef = useRef<PreparedPhoto | null>(null);
-  fotoRef.current = fotoAtual;
+  fotoRef.current = fase.tipo === "revisao" ? fase.foto : null;
   useEffect(() => () => discardPhoto(fotoRef.current), []);
 
   if (!paired) {
@@ -84,24 +63,32 @@ export default function Foto() {
       uploadId.current = randomUUID();
       setFase({ tipo: "revisao", foto: pronta });
     } catch {
-      setFase({ tipo: "erro", mensagem: "Não consegui tirar ou preparar a foto.", foto: null });
+      setFase({ tipo: "erro", mensagem: "Não consegui tirar ou preparar a foto." });
     }
   }
 
   async function enviar(foto: PreparedPhoto) {
-    if (!paired || !pasta) return;
-    setFase({ tipo: "enviando", foto });
+    const pasta = pastas.pasta;
+    if (!pasta) return;
+    const id = uploadId.current;
+    setFase({ tipo: "enviando" });
     try {
-      const resultado = await uploadPhoto(paired.session, paired.signer, pasta, foto.bytes, {
-        now: Date.now,
-        uuid: randomUUID,
-      }, { uploadId: uploadId.current });
+      const resumo = await enqueueAndSend(foto.bytes, { id: pasta, name: pastas.nomeDa(pasta) }, id);
       await saveLastFolder(pasta);
-      discardPhoto(foto);
-      setFase({ tipo: "pronto", resultado, pasta: pastas.find((p) => p.id === pasta)?.name ?? pasta });
-    } catch (e) {
-      // Mantém a foto para tentar de novo (a fila automática vem na etapa 7).
-      setFase({ tipo: "erro", mensagem: e instanceof ApiError ? e.message : "Erro inesperado no envio.", foto });
+      discardPhoto(foto); // os bytes já estão guardados na fila
+      const enviada = resumo?.enviadas.find((e) => e.item.uploadId === id);
+      if (enviada) {
+        setFase({ tipo: "pronto", resultado: enviada.result, pasta: pastas.nomeDa(pasta) });
+        return;
+      }
+      const falha = resumo?.falhas.find((i) => i.uploadId === id);
+      setFase({
+        tipo: "na_fila",
+        falhou: Boolean(falha),
+        motivo: falha?.lastError ?? "Será enviada sozinha quando o PC estiver acessível.",
+      });
+    } catch {
+      setFase({ tipo: "erro", mensagem: "Não consegui guardar a foto no celular." });
     }
   }
 
@@ -121,12 +108,25 @@ export default function Foto() {
     );
   }
 
-  if (fase.tipo === "pronto") {
+  if (fase.tipo === "pronto" || fase.tipo === "na_fila") {
+    const pendentes = items.filter((i) => i.status === "pendente").length;
     return (
       <View style={[s.tela, s.centro]}>
-        <Text style={s.titulo}>{fase.resultado.status === "saved" ? "Foto enviada" : "O PC já tinha esta foto"}</Text>
-        <Text style={s.texto}>{fase.resultado.file}</Text>
-        <Text style={s.suave}>em {fase.pasta}</Text>
+        {fase.tipo === "pronto" ? (
+          <>
+            <Text style={s.titulo}>{fase.resultado.status === "saved" ? "Foto enviada" : "O PC já tinha esta foto"}</Text>
+            <Text style={s.texto}>{fase.resultado.file}</Text>
+            <Text style={s.suave}>em {fase.pasta}</Text>
+          </>
+        ) : (
+          <>
+            <Text style={s.titulo}>{fase.falhou ? "Não deu para enviar" : "Foto na fila"}</Text>
+            <Text style={[s.texto, { textAlign: "center" }]}>{fase.motivo}</Text>
+            <Text style={s.suave}>
+              {fase.falhou ? "Ela ficou na fila da tela inicial para tentar de novo ou descartar." : `${pendentes} foto(s) esperando envio.`}
+            </Text>
+          </>
+        )}
         <Botao onPress={() => setFase({ tipo: "camera" })} style={{ alignSelf: "stretch", marginTop: 16 }}>
           Outra foto
         </Botao>
@@ -138,13 +138,11 @@ export default function Foto() {
   }
 
   if (fase.tipo === "erro") {
-    const foto = fase.foto;
     return (
       <View style={s.tela}>
         <Text style={s.erro}>{fase.mensagem}</Text>
-        {foto && <Botao onPress={() => void enviar(foto)}>Tentar enviar de novo</Botao>}
-        <Botao tipo="secundario" onPress={() => descartar(foto)}>
-          {foto ? "Descartar e tirar outra" : "Voltar à câmera"}
+        <Botao tipo="secundario" onPress={() => setFase({ tipo: "camera" })}>
+          Voltar à câmera
         </Botao>
       </View>
     );
@@ -158,24 +156,8 @@ export default function Foto() {
         <Text style={s.suave}>
           {foto.width}×{foto.height} · {kb(foto.bytes.length)} · sem localização
         </Text>
-
-        <Text style={s.rotulo}>Pasta no PC</Text>
-        {erroPastas && <Text style={s.erro}>{erroPastas}</Text>}
-        <View style={s.chips}>
-          {pastas.map((p) => (
-            <Pressable
-              key={p.id}
-              onPress={() => setPasta(p.id)}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: pasta === p.id }}
-              style={[s.chip, pasta === p.id && s.chipAtivo]}
-            >
-              <Text style={[s.chipTexto, pasta === p.id && { color: "#FFFFFF" }]}>{p.name}</Text>
-            </Pressable>
-          ))}
-        </View>
-
-        <Botao onPress={() => void enviar(foto)} desativado={!pasta}>
+        <FolderPicker f={pastas} />
+        <Botao onPress={() => void enviar(foto)} desativado={!pastas.pasta}>
           Enviar
         </Botao>
         <Botao tipo="secundario" onPress={() => descartar(foto)}>
@@ -217,13 +199,8 @@ const s = StyleSheet.create({
   titulo: { fontSize: 22, fontWeight: "700", color: cores.texto },
   texto: { fontSize: 16, color: cores.texto },
   suave: { fontSize: 13, color: cores.suave },
-  rotulo: { fontSize: 13, fontWeight: "700", color: cores.suave, textTransform: "uppercase", marginTop: 6 },
   erro: { color: cores.perigo, fontSize: 16 },
   previa: { width: "100%", borderRadius: 12, backgroundColor: "#000" },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  chip: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 20, borderWidth: 1, borderColor: cores.borda, backgroundColor: cores.cartao },
-  chipAtivo: { backgroundColor: cores.primaria, borderColor: cores.primaria },
-  chipTexto: { fontSize: 15, color: cores.texto },
   barra: { position: "absolute", bottom: 40, left: 0, right: 0, alignItems: "center" },
   disparador: { width: 76, height: 76, borderRadius: 38, backgroundColor: "#FFFFFF", borderWidth: 5, borderColor: "rgba(255,255,255,0.5)" },
 });
