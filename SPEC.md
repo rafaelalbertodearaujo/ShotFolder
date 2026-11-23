@@ -41,6 +41,8 @@ Decisões já tomadas com o Rafael: PC em **Node + TypeScript**; ao chegar, **no
 - Chave: no MVP, chave em software guardada no `expo-secure-store` e assinatura com `@noble/curves`; logo depois troca por **módulo Expo próprio em Kotlin** (`app/modules/keystore`) com chave no Android Keystore. Tudo atrás de uma interface `Signer`, então a troca não mexe no resto.
 - Build: recomendo `npx expo run:android` local (Android Studio + JDK 17, ~10 GB) porque o módulo Kotlin exige muitas recompilações; EAS Build na nuvem fica como alternativa para gerar o APK final.
 
+**Regra de dependências do app:** rodar `npx expo install <pacote>` sempre de dentro de `app/` (rodado de outra pasta, o pacote vai parar no `package.json` da raiz e some do app).
+
 **Compartilhado (`packages/protocol/`)**: string canônica de assinatura, nomes de cabeçalho, limites, tipos e vetores de teste usados pelos dois lados.
 
 **Por que JPEG:** o Claude Code lê JPEG/PNG/WEBP, mas não HEIC. O app converte tudo para JPEG (com opção "original" quando precisar de resolução total). Limite de tamanho de imagem do Claude: a conferir.
