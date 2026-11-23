@@ -65,6 +65,43 @@ Atalho usado abaixo: `npm run cli -w @shotfolder/server --` equivale ao comando 
 
 O celular de verdade entra na etapa 4 (o QR será lido pela câmera).
 
+## Etapa 4 — App no celular (precisa de você)
+
+O código já está pronto e testado no PC. Falta instalar no Samsung.
+
+**Preparar o PC (uma vez):**
+1. Instalar o Android Studio (vem com o JDK certo). Na primeira abertura, deixar ele baixar o Android SDK.
+2. Criar a variável de ambiente `ANDROID_HOME` apontando para `%LOCALAPPDATA%\Android\Sdk` e pôr `%LOCALAPPDATA%\Android\Sdk\platform-tools` no `Path`. Fechar e abrir o terminal.
+3. No Samsung: Configurações → Sobre o telefone → Informações do software → tocar 7 vezes em "Número de compilação"; depois Opções do desenvolvedor → Depuração USB.
+4. Ligar o cabo USB e aceitar a pergunta no celular. `adb devices` deve listar o aparelho.
+
+**Instalar o app (development build):** na pasta `app`:
+
+```powershell
+npx expo run:android
+```
+
+A primeira compilação demora (vários minutos). O app abre sozinho no celular.
+
+**Testar o pareamento — opção A, sem Tailscale (pelo cabo USB):**
+1. `adb reverse tcp:47800 tcp:47800` (o celular passa a enxergar a porta 47800 do PC pelo cabo).
+2. Servidor: `npm run start:local -w @shotfolder/server` (escuta em 127.0.0.1:47800).
+3. `npm run cli -w @shotfolder/server -- pair` e ler o QR com o app.
+   - [ ] O app mostra o código de 6 dígitos **igual** ao do PC; responder `s`
+   - [ ] O app volta para o início e mostra as pastas da lista (nomes, sem caminhos)
+   - [ ] `npm run cli -w @shotfolder/server -- devices list` mostra o celular
+
+**Opção B, com Tailscale (o uso real):** Tailscale ligado no PC e no celular, `npm run start -w @shotfolder/server` (sem `--local`), `pair` e ler o QR.
+   - [ ] Mesmo resultado da opção A, sem cabo
+
+**Erros que valem testar:**
+   - [ ] QR antigo (depois de 2 min) → mensagem "O QR expirou"
+   - [ ] Responder `n` no PC → "Pareamento recusado no PC"
+   - [ ] `devices revoke` no PC e puxar a lista para atualizar → "O PC não reconhece este celular"
+   - [ ] Servidor parado → "Não consegui falar com o PC…"
+
+Me mande print ou o texto de qualquer erro.
+
 ## Próximas etapas
 
 (preenchido conforme as etapas forem implementadas)

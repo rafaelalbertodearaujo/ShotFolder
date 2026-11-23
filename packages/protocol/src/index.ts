@@ -263,8 +263,11 @@ export const PAIR_PATTERNS = {
   /** 32 bytes aleatórios em base64url, sem "=" (43 caracteres). */
   token: /^[A-Za-z0-9_-]{43}$/,
   host: /^(?:\d{1,3}\.){3}\d{1,3}$/,
-  /** Nome do aparelho: letras, dígitos, espaço e pontuação simples. */
-  deviceName: /^[\p{L}\p{N} ._()'-]{1,40}$/u,
+  /**
+   * Nome do aparelho: letras (inclusive acentuadas), dígitos, espaço e pontuação simples.
+   * Sem \p{L}: escrito com faixas explícitas para rodar igual no Node e no Hermes (app).
+   */
+  deviceName: /^[A-Za-z0-9À-ÖØ-öø-ɏ ._()'-]{1,40}$/,
 } as const;
 
 export interface PairInfo {

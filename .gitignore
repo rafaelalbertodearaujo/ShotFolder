@@ -37,3 +37,6 @@ Thumbs.db
 .idea/
 *.log
 .claude/settings.local.json
+
+# Ícones do app (o *.png acima é para fotos de teste)
+!app/assets/*.png

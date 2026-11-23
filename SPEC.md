@@ -112,7 +112,7 @@ ShotFolder/
   SPEC.md  README.md  .gitignore  package.json (npm workspaces)
   packages/protocol/   string canônica, constantes, tipos, testes
   server/              src/ (app, state, files, notify, net, main; depois pair, admin, cli), test/
-  app/                 Expo; app/modules/keystore/ (Kotlin)
+  app/                 Expo SDK 58: src/app/ (telas), src/lib/ (crypto, api, storage), test/; depois app/modules/keystore/ (Kotlin)
   server/src/tools/    enviar-teste.ts (cliente de teste que faz o papel do celular)
   server/config.exemplo.json  modelo do config.json (o real fica em %LOCALAPPDATA%\ShotFolder)
   scripts/             instalar-tarefa.ps1, firewall.ps1
@@ -139,7 +139,11 @@ ShotFolder/
    - API admin em `127.0.0.1:<adminPort>` (padrão: porta + 1): exige `Authorization: Bearer <admin.token>` (arquivo novo a cada partida, apagado ao parar), `Host` exato e **nenhum** cabeçalho `Origin` (bloqueia sites no navegador e DNS rebinding). Hoje só expõe o pareamento.
    - JSON com campo a mais é recusado (o Fastify por padrão só descartaria).
    - `folders add` recusa pastas do sistema, junções etc. (mesma regra do servidor) e uma alteração inválida da config não é gravada.
-4. **App mínimo no celular.** Development build no Samsung, ler QR, parear (chave em software), listar pastas. Pronto quando: o celular aparece em `devices list` e mostra as pastas da lista.
+4. 🟡 **App mínimo no celular** (código pronto e testado no PC; **falta rodar no Samsung**). Development build no Samsung, ler QR, parear (chave em software), listar pastas. Pronto quando: o celular aparece em `devices list` e mostra as pastas da lista.
+   - Feito: projeto Expo SDK 58 (React Native 0.88) em `app/`, no mesmo workspace; telas `src/app/index.tsx` (pareado? lista as pastas) e `src/app/parear.tsx` (leitor de QR com `expo-camera`, código de 6 dígitos, campo para colar o texto do QR); chave P-256 em software com `@noble/curves` (`src/lib/crypto.ts`, interface `Signer`), guardada no `expo-secure-store` (`src/lib/storage.ts`); cliente HTTP em `src/lib/api.ts` com mensagens de erro em português.
+   - Verificado sem o celular: 12 testes (assinatura do app confere no verificador do PC, código de pareamento igual ao do PC, e pareamento + listagem de pastas contra o servidor real por HTTP); `expo export --platform android` gera o pacote Hermes sem erro; `expo-doctor` 20/20.
+   - Decisões: `usesCleartextTraffic: true` (o tráfego é HTTP, mas já vai cifrado dentro do Tailscale; o IP do PC só é conhecido no QR, então não dá para liberar por domínio); esquema de link do app é `shotfolder-app://`, **diferente** do `shotfolder://` do QR, e a tela de pareamento ignora parâmetros de link — um link malicioso não consegue parear o celular com o PC de outra pessoa; `allowBackup: false` e microfone bloqueado; regex do nome do aparelho sem `\p{L}` para rodar igual no Hermes.
+   - Pendências conhecidas: React 19.3.1 único no monorepo (o Expo pede 19.3.0; diferença de patch, checagem excluída em `app/package.json`); `npm audit` aponta 3 alertas moderados em `minimatch` dentro das ferramentas de build do Expo (não vão para o celular; corrigir exigiria rebaixar o Expo).
 5. **Câmera e envio.** Tirar foto → escolher pasta (ou padrão) → confirmar → JPEG sem EXIF → enviar. Pronto quando: a foto do celular cai na pasta certa do PC e o Claude Code a lê pelo caminho.
 6. **Chave no Keystore.** Módulo Kotlin: gerar par P-256 não exportável (StrongBox se houver, `setUnlockedDeviceRequired`), exportar a chave pública, assinar; re-parear. Pronto quando: envio funciona com a chave nova; a chave antiga foi revogada; com o celular bloqueado a assinatura falha.
 7. **Fila offline.** SQLite + cópia privada; envia ao abrir o app, quando a rede volta e por tarefa de fundo; repetição com espera crescente; "já recebido" conta como sucesso. Pronto quando: com o Tailscale desligado tiro 3 fotos, religo e as 3 chegam uma vez só.
