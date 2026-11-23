@@ -1,0 +1,13 @@
+{
+  "port": 47800,
+  "folders": [
+    { "id": "shotfolder", "name": "ShotFolder (prints)", "path": "C:\Users\SEU_USUARIO\Desktop\Projetos\ShotFolder\prints" },
+    { "id": "faculdade", "name": "Faculdade", "path": "C:\Users\SEU_USUARIO\Documents\Faculdade\fotos" }
+  ],
+  "defaultFolder": "shotfolder",
+  "limits": {
+    "maxUploadsPerMinute": 30,
+    "maxBytesPerDay": 2147483648,
+    "minFreeBytes": 5368709120
+  }
+}

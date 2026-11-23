@@ -4,14 +4,15 @@
   "description": "Envio seguro de fotos do celular Android direto para pastas escolhidas no PC Windows",
   "license": "MIT",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "server"
   ],
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "test": "npm test --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "test": "npm run build -w @shotfolder/protocol && npm test --workspaces --if-present",
+    "typecheck": "npm run build -w @shotfolder/protocol && npm run typecheck --workspaces --if-present"
   }
 }

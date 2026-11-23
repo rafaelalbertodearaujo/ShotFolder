@@ -1,0 +1,222 @@
+/**
+ * Servidor HTTP do ShotFolder (Fastify).
+ *
+ * Ordem no envio de foto, da checagem mais barata para a mais cara:
+ *   1. cabeçalhos, horário, aparelho e assinatura (antes de ler o corpo)
+ *   2. pasta da lista, repetição, limites de uso e espaço livre
+ *   3. recebe o corpo numa pasta temporária contando bytes e calculando o SHA-256
+ *   4. confere tamanho, SHA-256 e o tipo real pelos primeiros bytes
+ *   5. copia para a pasta de destino com nome gerado aqui, sem sobrescrever
+ */
+import { createHash, randomUUID } from "node:crypto";
+import { constants, createWriteStream } from "node:fs";
+import { copyFile, readdir, statfs, unlink } from "node:fs/promises";
+import { join } from "node:path";
+import { Transform, type Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
+import { ALLOWED_CONTENT_TYPES, ROUTES, type ErrorCode, type UploadFields } from "@shotfolder/protocol";
+import { authenticateFolders, authenticateUpload } from "@shotfolder/protocol/node";
+import { checkFolderPath, defaultForbiddenRoots, destinationPath, generateFileName, sniffImageType } from "./files.js";
+import { noopNotifier, type Notifier } from "./notify.js";
+import { audit, ensureStateDir, FILES, keyLookup, loadConfig, loadDevices, SeenStore, type AuditEvent } from "./state.js";
+
+export interface AppDeps {
+  stateDir: string;
+  now?: () => number;
+  notify?: Notifier;
+  /** Pastas proibidas; os testes trocam para poder usar pastas temporárias. */
+  forbiddenRoots?: string[];
+}
+
+/** Erro com resposta HTTP já definida. */
+class HttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+  ) {
+    super(code);
+  }
+}
+
+const AUTH_ERRORS: ReadonlySet<ErrorCode> = new Set(["clock_skew", "unknown_device", "bad_signature"]);
+
+export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
+  const dir = deps.stateDir;
+  const now = deps.now ?? Date.now;
+  const notify = deps.notify ?? noopNotifier;
+  const forbidden = deps.forbiddenRoots ?? defaultForbiddenRoots(dir);
+  await ensureStateDir(dir);
+  await cleanTmp(dir);
+  const seen = await SeenStore.open(dir);
+
+  /** Envios em andamento (mesmo uploadId chegando duas vezes ao mesmo tempo). */
+  const inFlight = new Set<string>();
+  /** Uso por aparelho: horários dos últimos envios e bytes por dia. Zera ao reiniciar. */
+  const recent = new Map<string, number[]>();
+  const bytesToday = new Map<string, number>();
+  const authed = new WeakMap<FastifyRequest, UploadFields>();
+
+  const log = (ev: AuditEvent) => audit(dir, now(), ev).catch(() => {});
+
+  const app = Fastify({
+    logger: false,
+    bodyLimit: 16 * 1024, // só para corpos JSON; a foto é tratada como fluxo abaixo
+    requestTimeout: 120_000,
+    connectionTimeout: 30_000,
+    return503OnClosing: true,
+  });
+
+  // A foto não é carregada na memória: o "parser" só repassa o fluxo de bytes.
+  app.addContentTypeParser([...ALLOWED_CONTENT_TYPES], (_req, payload, done) => done(null, payload));
+
+  const reject = (reply: FastifyReply, status: number, error: string) => reply.code(status).send({ error });
+
+  // ---------- GET /v1/folders ----------
+  app.get(ROUTES.folders, async (req, reply) => {
+    const devices = await loadDevices(dir);
+    const r = authenticateFolders(req.headers, { nowMs: now(), getPublicKey: keyLookup(devices) });
+    if (!r.ok) {
+      log({ event: "folders_rejected", ip: req.ip, reason: r.error, field: r.field });
+      return AUTH_ERRORS.has(r.error) ? reject(reply, 401, "unauthorized") : reject(reply, 400, r.error);
+    }
+    const cfg = await loadConfig(dir);
+    return {
+      folders: cfg.folders.map(({ id, name }) => ({ id, name })),
+      defaultFolder: cfg.defaultFolder ?? null,
+    };
+  });
+
+  // ---------- POST /v1/upload ----------
+  app.post(
+    ROUTES.upload,
+    {
+      // Autentica no onRequest: o corpo ainda não foi lido.
+      onRequest: async (req, reply) => {
+        const devices = await loadDevices(dir);
+        const r = authenticateUpload(req.headers, { nowMs: now(), getPublicKey: keyLookup(devices) });
+        if (!r.ok) {
+          log({ event: "upload_rejected", ip: req.ip, reason: r.error, field: r.field });
+          return AUTH_ERRORS.has(r.error) ? reject(reply, 401, "unauthorized") : reject(reply, 400, r.error);
+        }
+        authed.set(req, r.value);
+      },
+    },
+    async (req, reply) => {
+      const f = authed.get(req)!;
+      const base = { ip: req.ip, deviceId: f.deviceId, uploadId: f.uploadId, folder: f.folderId };
+
+      const previous = seen.get(f.uploadId);
+      if (previous) {
+        if (previous.deviceId !== f.deviceId) {
+          log({ event: "upload_rejected", ...base, reason: "upload_id_conflict" });
+          return reject(reply, 409, "upload_id_conflict");
+        }
+        log({ event: "upload_duplicate", ...base, file: previous.file });
+        return reply.code(200).send({ status: "duplicate", file: previous.file, folder: previous.folderId });
+      }
+      if (inFlight.has(f.uploadId)) return reject(reply, 409, "in_progress");
+
+      inFlight.add(f.uploadId);
+      try {
+        const saved = await receive(f, req.body as Readable);
+        log({ event: "upload_saved", ...base, file: saved.file, bytes: Number(f.contentLength) });
+        notify("Foto recebida", `${saved.file} → ${saved.folderName}`);
+        return reply.code(201).send({ status: "saved", file: saved.file, folder: f.folderId });
+      } catch (e) {
+        if (e instanceof HttpError) {
+          log({ event: "upload_rejected", ...base, reason: e.code });
+          return reject(reply, e.status, e.code);
+        }
+        log({ event: "upload_error", ...base, reason: (e as Error).message });
+        return reject(reply, 500, "internal_error");
+      } finally {
+        inFlight.delete(f.uploadId);
+      }
+    },
+  );
+
+  async function receive(f: UploadFields, body: Readable): Promise<{ file: string; folderName: string }> {
+    const cfg = await loadConfig(dir);
+    const folder = cfg.folders.find((x) => x.id === f.folderId);
+    if (!folder) throw new HttpError(404, "unknown_folder");
+
+    // Limites de uso por aparelho.
+    const t = now();
+    const recentes = (recent.get(f.deviceId) ?? []).filter((x) => t - x < 60_000);
+    if (recentes.length >= cfg.limits.maxUploadsPerMinute) throw new HttpError(429, "rate_limited");
+    const dayKey = `${f.deviceId}:${new Date(t).toISOString().slice(0, 10)}`;
+    const size = Number(f.contentLength);
+    if ((bytesToday.get(dayKey) ?? 0) + size > cfg.limits.maxBytesPerDay) throw new HttpError(429, "daily_quota");
+    recentes.push(t);
+    recent.set(f.deviceId, recentes);
+
+    const problem = await checkFolderPath(folder.path, forbidden);
+    if (problem) throw new HttpError(500, "folder_unavailable");
+    const fs = await statfs(folder.path);
+    if (fs.bavail * fs.bsize - size < cfg.limits.minFreeBytes) throw new HttpError(507, "insufficient_storage");
+
+    // Recebe numa pasta temporária, contando bytes e calculando o SHA-256.
+    const tmp = join(dir, FILES.tmp, `${randomUUID()}.part`);
+    const hash = createHash("sha256");
+    let received = 0;
+    let head = Buffer.alloc(0);
+    const meter = new Transform({
+      transform(chunk: Buffer, _enc, cb) {
+        received += chunk.length;
+        if (received > size) return cb(new HttpError(400, "size_mismatch"));
+        hash.update(chunk);
+        if (head.length < 16) head = Buffer.concat([head, chunk]).subarray(0, 16);
+        cb(null, chunk);
+      },
+    });
+    try {
+      try {
+        await pipeline(body, meter, createWriteStream(tmp, { flags: "wx" }));
+      } catch (e) {
+        if (e instanceof HttpError) throw e;
+        throw new HttpError(400, "body_incomplete");
+      }
+      if (received !== size) throw new HttpError(400, "size_mismatch");
+      if (hash.digest("hex") !== f.sha256) throw new HttpError(400, "hash_mismatch");
+      if (sniffImageType(head) !== f.contentType) throw new HttpError(415, "content_mismatch");
+
+      // Confere a pasta de novo logo antes de gravar (pode ter mudado no meio).
+      if (await checkFolderPath(folder.path, forbidden)) throw new HttpError(500, "folder_unavailable");
+      // copyFile com COPYFILE_EXCL: falha se já existir, nunca sobrescreve.
+      // A cópia nasce na pasta de destino e herda as permissões dela.
+      for (let tentativa = 0; tentativa < 5; tentativa++) {
+        const file = generateFileName(t, f.contentType);
+        try {
+          await copyFile(tmp, destinationPath(folder.path, file), constants.COPYFILE_EXCL);
+          bytesToday.set(dayKey, (bytesToday.get(dayKey) ?? 0) + size);
+          await seen.add(f.uploadId, { deviceId: f.deviceId, folderId: f.folderId, file, at: new Date(t).toISOString() }, t);
+          return { file, folderName: folder.name };
+        } catch (e) {
+          if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+        }
+      }
+      throw new Error("Não consegui gerar um nome livre.");
+    } finally {
+      await unlink(tmp).catch(() => {});
+    }
+  }
+
+  // Qualquer outra rota: 404 sem detalhes.
+  app.setNotFoundHandler((_req, reply) => reject(reply, 404, "not_found"));
+  app.setErrorHandler((err: { message?: string; statusCode?: number }, req, reply) => {
+    log({ event: "http_error", ip: req.ip, reason: err.message });
+    const status = err.statusCode && err.statusCode < 500 ? err.statusCode : 500;
+    return reject(reply, status, status === 500 ? "internal_error" : "bad_request");
+  });
+
+  return app;
+}
+
+/** Apaga restos de envios interrompidos. */
+async function cleanTmp(dir: string): Promise<void> {
+  const tmpDir = join(dir, FILES.tmp);
+  for (const name of await readdir(tmpDir)) {
+    if (name.endsWith(".part")) await unlink(join(tmpDir, name)).catch(() => {});
+  }
+}

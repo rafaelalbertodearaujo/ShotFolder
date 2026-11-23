@@ -111,9 +111,11 @@ câmera / Compartilhar                             escuta só em 100.x:47800 (Ta
 ShotFolder/
   SPEC.md  README.md  .gitignore  package.json (npm workspaces)
   packages/protocol/   string canônica, constantes, tipos, testes
-  server/              src/ (http, upload, pair, admin, store, notify, cli), test/
+  server/              src/ (app, state, files, notify, net, main; depois pair, admin, cli), test/
   app/                 Expo; app/modules/keystore/ (Kotlin)
-  scripts/             enviar-teste.ts, instalar-tarefa.ps1, firewall.ps1
+  server/src/tools/    enviar-teste.ts (cliente de teste que faz o papel do celular)
+  server/config.exemplo.json  modelo do config.json (o real fica em %LOCALAPPDATA%\ShotFolder)
+  scripts/             instalar-tarefa.ps1, firewall.ps1
   docs/TESTAR.md       checklist do que o Rafael testa à mão
 ```
 
@@ -123,7 +125,13 @@ ShotFolder/
 
 0. **Preparação (você, à mão).** Pronto quando: `node -v` e `git -v` respondem; Tailscale nos dois aparelhos e `tailscale ping <celular>` funciona no PC; depuração USB ligada e `adb devices` lista o Samsung.
 1. ✅ **Repo + protocolo** (concluída: 45 testes passando; vetores fixos em `packages/protocol/test/vetores.json`, gerados por `gerar-vetores.mjs`). Workspaces, `packages/protocol` com string canônica e verificação. Pronto quando: `npm test` passa com vetores de teste (assinatura válida, campo alterado, horário fora da janela).
-2. **Servidor recebe foto assinada.** Fastify no IP do Tailscale, `/v1/upload`, `/v1/folders`, lista de pastas, nomes gerados, temp→mover, limites, `uploadId` persistido, `audit.jsonl`, notificação; `scripts/enviar-teste.ts` assina com chave em software cadastrada à mão. Pronto quando: o script manda uma foto e ela aparece na pasta com notificação; testes automáticos recusam traversal, tipo falso, arquivo grande demais, assinatura errada, repetição e `folderId` desconhecido.
+2. ✅ **Servidor recebe foto assinada** (concluída: 42 testes do servidor + teste ponta a ponta no PC com `--local`). Fastify no IP do Tailscale, `/v1/upload`, `/v1/folders`, lista de pastas, nomes gerados, temp→mover, limites, `uploadId` persistido, `audit.jsonl`, notificação; `scripts/enviar-teste.ts` assina com chave em software cadastrada à mão. Pronto quando: o script manda uma foto e ela aparece na pasta com notificação; testes automáticos recusam traversal, tipo falso, arquivo grande demais, assinatura errada, repetição e `folderId` desconhecido.
+   - Como ficou: estado em `%LOCALAPPDATA%\ShotFolder` (ou `SHOTFOLDER_HOME`); `config.json`, `devices.json` e `uploads-vistos.json` são relidos a cada requisição (revogar vale na hora). Sem Tailscale o servidor se recusa a subir, salvo com `--local` (só `127.0.0.1`); IP fora de 100.64.0.0/10 é recusado.
+   - Gravação: recebe em `tmp\` e **copia** com `COPYFILE_EXCL` (falha se o nome existir, nunca sobrescreve; a cópia herda as permissões da pasta de destino). Mover/hard link manteria as permissões da pasta de estado.
+   - Pasta da lista é recusada se for raiz de disco, caminho de rede, pasta do sistema (`Windows`, `Program Files`, `ProgramData`, `AppData`, inclusive Inicializar), a própria pasta de estado, ou se ela ou um nível acima for link/junção. Checado na partida e antes de cada gravação.
+   - Falha de autenticação responde só `401 unauthorized`; o motivo (`bad_signature`, `unknown_device`, `clock_skew`) vai só para o `audit.jsonl`.
+   - Limites padrão: 30 envios/min, 2 GB/dia, 5 GB livres. Contagem por minuto e por dia fica na memória (zera ao reiniciar) — aceitável para um aparelho só.
+   - Notificação via PowerShell do Windows (sem `node-notifier`: uma dependência a menos).
 3. **Pareamento + CLI admin.** Admin em 127.0.0.1 com token local; `shotfolder pair` mostra QR no terminal e pede o código; `folders add/list`, `devices list/revoke`. Pronto quando: o script de teste pareia lendo o texto do QR; QR expirado ou reutilizado é recusado; aparelho revogado recebe 401.
 4. **App mínimo no celular.** Development build no Samsung, ler QR, parear (chave em software), listar pastas. Pronto quando: o celular aparece em `devices list` e mostra as pastas da lista.
 5. **Câmera e envio.** Tirar foto → escolher pasta (ou padrão) → confirmar → JPEG sem EXIF → enviar. Pronto quando: a foto do celular cai na pasta certa do PC e o Claude Code a lê pelo caminho.
