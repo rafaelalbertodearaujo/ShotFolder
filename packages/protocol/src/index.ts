@@ -250,3 +250,74 @@ export function parseFoldersHeaders(headers: HeaderBag): Result<Signed<FoldersFi
     },
   };
 }
+
+// ---------- pareamento por QR ----------
+
+/**
+ * Conteúdo do QR mostrado no PC:
+ *   shotfolder://pair?v=1&host=100.101.102.103&port=47800&t=<token>
+ * O token é de uso único e vale poucos minutos.
+ */
+export const PAIR_SCHEME = "shotfolder:";
+export const PAIR_PATTERNS = {
+  /** 32 bytes aleatórios em base64url, sem "=" (43 caracteres). */
+  token: /^[A-Za-z0-9_-]{43}$/,
+  host: /^(?:\d{1,3}\.){3}\d{1,3}$/,
+  /** Nome do aparelho: letras, dígitos, espaço e pontuação simples. */
+  deviceName: /^[\p{L}\p{N} ._()'-]{1,40}$/u,
+} as const;
+
+export interface PairInfo {
+  host: string;
+  port: number;
+  token: string;
+}
+
+function validPairInfo(p: PairInfo): boolean {
+  return (
+    PAIR_PATTERNS.host.test(p.host) &&
+    p.host.split(".").every((n) => Number(n) <= 255) &&
+    Number.isInteger(p.port) &&
+    p.port >= 1024 &&
+    p.port <= 65535 &&
+    PAIR_PATTERNS.token.test(p.token)
+  );
+}
+
+export function buildPairUri(p: PairInfo): string {
+  if (!validPairInfo(p)) throw new Error("Dados de pareamento inválidos.");
+  return `shotfolder://pair?v=1&host=${p.host}&port=${p.port}&t=${p.token}`;
+}
+
+/** Lê o texto do QR. Qualquer coisa fora do formato exato é recusada. */
+export function parsePairUri(uri: string): PairInfo | null {
+  const m = /^shotfolder:\/\/pair\?v=1&host=([0-9.]{7,15})&port=(\d{4,5})&t=([A-Za-z0-9_-]{43})$/.exec(uri.trim());
+  if (!m) return null;
+  const info: PairInfo = { host: m[1]!, port: Number(m[2]), token: m[3]! };
+  return validPairInfo(info) ? info : null;
+}
+
+/**
+ * Texto cujo SHA-256 gera o código de confirmação de 6 dígitos. O PC e o celular
+ * calculam cada um o seu; se baterem, ninguém trocou a chave no meio do caminho.
+ */
+export function pairCodeInput(token: string, publicKeySpki: string): string {
+  return `SHOTFOLDER-PAIR-V1\n${token}\n${publicKeySpki}`;
+}
+
+/** 6 dígitos a partir do SHA-256 (hex) de `pairCodeInput`. */
+export function pairCodeFromSha256Hex(hex: string): string {
+  if (!PATTERNS.sha256.test(hex)) throw new Error("SHA-256 inválido.");
+  return String(parseInt(hex.slice(0, 8), 16) % 1_000_000).padStart(6, "0");
+}
+
+export interface PairRequest {
+  token: string;
+  publicKey: string;
+  deviceName: string;
+}
+
+export interface PairResponse {
+  status: "paired";
+  deviceId: string;
+}

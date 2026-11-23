@@ -2,12 +2,13 @@
 /**
  * Cliente de teste no próprio PC, fazendo o papel do celular (com chave em software).
  *
- *   npm run enviar-teste -w @shotfolder/server -- registrar
+ *   npm run enviar-teste -w @shotfolder/server -- parear "<texto do QR>"
  *   npm run enviar-teste -w @shotfolder/server -- pastas
  *   npm run enviar-teste -w @shotfolder/server -- enviar <foto.jpg> [codigo-da-pasta] [--repetir]
  *
- * "registrar" cria uma chave de teste e cadastra o aparelho em devices.json
- * (o pareamento por QR vem na etapa 3). Opção --url muda o endereço do servidor.
+ * "parear" cria uma chave de teste, manda para o PC e espera você confirmar o
+ * código no "shotfolder pair". Depois disso, "pastas" e "enviar" usam o endereço
+ * que veio no QR (ou --url, se informado).
  */
 import { createHash, createPrivateKey, generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
@@ -16,12 +17,14 @@ import {
   buildFoldersCanonical,
   buildUploadCanonical,
   foldersHeaders,
+  parsePairUri,
   ROUTES,
   uploadHeaders,
   type AllowedContentType,
   type UploadFields,
 } from "@shotfolder/protocol";
-import { defaultStateDir, loadConfig, loadDevices, newDeviceId, saveDevices } from "../state.js";
+import { pairCode } from "@shotfolder/protocol/node";
+import { defaultStateDir, loadConfig } from "../state.js";
 
 const KEY_FILE = "teste-cliente.json";
 const TYPES: Record<string, AllowedContentType> = {
@@ -34,6 +37,8 @@ const TYPES: Record<string, AllowedContentType> = {
 interface TestClient {
   deviceId: string;
   privateKeyPkcs8: string;
+  /** Endereço do servidor que veio no QR. */
+  baseUrl: string;
 }
 
 const dir = defaultStateDir();
@@ -51,15 +56,14 @@ const urlArg = flag("--url");
 
 async function baseUrl(): Promise<string> {
   if (urlArg) return urlArg.replace(/\/$/, "");
-  const cfg = await loadConfig(dir);
-  return `http://127.0.0.1:${cfg.port}`;
+  return (await loadClient()).baseUrl;
 }
 
 async function loadClient(): Promise<TestClient> {
   try {
     return JSON.parse(await readFile(join(dir, KEY_FILE), "utf8")) as TestClient;
   } catch {
-    throw new Error('Cliente de teste não registrado. Rode primeiro: "registrar".');
+    throw new Error('Cliente de teste não pareado. Rode primeiro: parear "<texto do QR>".');
   }
 }
 
@@ -68,22 +72,27 @@ function signWith(client: TestClient, canonical: string): string {
   return sign("sha256", Buffer.from(canonical, "utf8"), { key, dsaEncoding: "der" }).toString("base64");
 }
 
-async function registrar(): Promise<void> {
+async function parear(texto: string): Promise<void> {
+  const info = parsePairUri(texto);
+  if (!info) throw new Error("Texto do QR inválido.");
+  const url = urlArg ?? `http://${info.host}:${info.port}`;
   const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
-  const client: TestClient = {
-    deviceId: newDeviceId(),
-    privateKeyPkcs8: privateKey.export({ format: "der", type: "pkcs8" }).toString("base64"),
-  };
-  const devices = await loadDevices(dir);
-  devices.push({
-    id: client.deviceId,
-    name: "cliente de teste (PC)",
-    publicKey: publicKey.export({ format: "der", type: "spki" }).toString("base64"),
-    createdAt: new Date().toISOString(),
+  const spki = publicKey.export({ format: "der", type: "spki" }).toString("base64");
+  console.log(`Código no "celular": ${pairCode(info.token, spki)}  — confira com o PC e responda lá.`);
+  const res = await fetch(`${url}${ROUTES.pair}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token: info.token, publicKey: spki, deviceName: "cliente de teste (PC)" }),
   });
-  await saveDevices(dir, devices);
+  const data = (await res.json()) as { deviceId?: string; error?: string };
+  if (res.status !== 201 || !data.deviceId) throw new Error(`Pareamento falhou: ${res.status} ${data.error ?? ""}`);
+  const client: TestClient = {
+    deviceId: data.deviceId,
+    privateKeyPkcs8: privateKey.export({ format: "der", type: "pkcs8" }).toString("base64"),
+    baseUrl: url,
+  };
   await writeFile(join(dir, KEY_FILE), JSON.stringify(client, null, 2), { flag: "w" });
-  console.log(`Aparelho de teste cadastrado: ${client.deviceId}`);
+  console.log(`Pareado como ${data.deviceId}.`);
 }
 
 async function pastas(): Promise<void> {
@@ -126,7 +135,10 @@ async function enviar(arquivo: string, pasta: string | undefined): Promise<void>
 
 const [cmd, a1, a2] = args;
 const tarefas: Record<string, () => Promise<void>> = {
-  registrar,
+  parear: () => {
+    if (!a1) throw new Error('Uso: parear "<texto do QR>"');
+    return parear(a1);
+  },
   pastas,
   enviar: () => {
     if (!a1) throw new Error("Uso: enviar <foto.jpg> [codigo-da-pasta] [--repetir]");
@@ -135,7 +147,7 @@ const tarefas: Record<string, () => Promise<void>> = {
 };
 const tarefa = cmd ? tarefas[cmd] : undefined;
 if (!tarefa) {
-  console.log("Comandos: registrar | pastas | enviar <foto> [pasta] [--repetir]  (opção --url http://IP:porta)");
+  console.log('Comandos: parear "<QR>" | pastas | enviar <foto> [pasta] [--repetir]  (opção --url http://IP:porta)');
   process.exit(1);
 }
 tarefa().catch((e: unknown) => {

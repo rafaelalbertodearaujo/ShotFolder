@@ -23,6 +23,7 @@ export const FILES = {
   devices: "devices.json",
   seen: "uploads-vistos.json",
   audit: "audit.jsonl",
+  adminToken: "admin.token",
   tmp: "tmp",
 } as const;
 
@@ -67,6 +68,8 @@ export interface Limits {
 
 export interface Config {
   port: number;
+  /** Porta da API admin em 127.0.0.1 (padrão: port + 1). */
+  adminPort: number;
   /** IP do Tailscale do PC. Se ausente, é descoberto com `tailscale ip -4`. */
   host?: string;
   folders: FolderEntry[];
@@ -84,9 +87,28 @@ export const DEFAULT_PORT = 47800;
 
 /** Lê e valida config.json. Configuração inválida é erro, não "valor padrão". */
 export async function loadConfig(dir: string): Promise<Config> {
+  return parseConfig(await readJson<Partial<Config>>(join(dir, FILES.config), {}));
+}
+
+/**
+ * Altera config.json preservando o que não foi mexido. Valida antes de gravar:
+ * se a alteração deixaria a configuração inválida, nada é gravado.
+ */
+export async function updateConfig(dir: string, change: (raw: Partial<Config>) => void): Promise<Config> {
   const raw = await readJson<Partial<Config>>(join(dir, FILES.config), {});
+  change(raw);
+  const cfg = parseConfig(raw);
+  await writeJson(join(dir, FILES.config), raw);
+  return cfg;
+}
+
+const validPort = (p: unknown): p is number => Number.isInteger(p) && (p as number) >= 1024 && (p as number) <= 65535;
+
+export function parseConfig(raw: Partial<Config>): Config {
   const port = raw.port ?? DEFAULT_PORT;
-  if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("config.json: porta inválida.");
+  if (!validPort(port)) throw new Error("config.json: porta inválida.");
+  const adminPort = raw.adminPort ?? port + 1;
+  if (!validPort(adminPort) || adminPort === port) throw new Error("config.json: adminPort inválida.");
   if (raw.host !== undefined && typeof raw.host !== "string") throw new Error("config.json: host inválido.");
 
   const folders = raw.folders ?? [];
@@ -112,7 +134,7 @@ export async function loadConfig(dir: string): Promise<Config> {
   for (const [k, v] of Object.entries(limits)) {
     if (!Number.isFinite(v) || v < 0) throw new Error(`config.json: limite inválido: ${k}`);
   }
-  const cfg: Config = { port, folders, limits };
+  const cfg: Config = { port, adminPort, folders, limits };
   if (raw.host !== undefined) cfg.host = raw.host;
   if (raw.defaultFolder !== undefined) cfg.defaultFolder = raw.defaultFolder;
   return cfg;

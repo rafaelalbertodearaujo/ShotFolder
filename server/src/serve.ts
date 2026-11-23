@@ -1,17 +1,21 @@
-#!/usr/bin/env node
 /**
- * Inicia o servidor.
- *   node dist/main.js           escuta só no IP do Tailscale (uso normal)
- *   node dist/main.js --local   escuta só em 127.0.0.1 (teste no próprio PC)
+ * Inicia o servidor (comando `shotfolder serve`).
+ *   serve           escuta só no IP do Tailscale (uso normal)
+ *   serve --local   escuta só em 127.0.0.1 (teste no próprio PC)
+ * Também sobe a API admin em 127.0.0.1:<adminPort> e grava um token novo em admin.token.
  */
 import { execFile } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { unlink, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { existsSync } from "node:fs";
 import { promisify } from "node:util";
-import { buildApp } from "./app.js";
+import { buildAdminApp } from "./admin.js";
+import { buildApp, createPairing } from "./app.js";
 import { checkFolderPath, defaultForbiddenRoots } from "./files.js";
 import { isTailscaleIPv4 } from "./net.js";
 import { windowsToast } from "./notify.js";
-import { defaultStateDir, ensureStateDir, loadConfig } from "./state.js";
+import { defaultStateDir, ensureStateDir, FILES, loadConfig } from "./state.js";
 
 const run = promisify(execFile);
 
@@ -30,8 +34,7 @@ async function detectTailscaleIp(): Promise<string | null> {
   return null;
 }
 
-async function main(): Promise<void> {
-  const local = process.argv.includes("--local");
+export async function serve(local: boolean): Promise<void> {
   const dir = defaultStateDir();
   await ensureStateDir(dir);
   const cfg = await loadConfig(dir);
@@ -52,16 +55,33 @@ async function main(): Promise<void> {
     console.log(problem ? `  [RECUSADA] ${f.id}: ${problem}` : `  [ok] ${f.id} → ${f.path}`);
   }
 
-  const app = await buildApp({ stateDir: dir, notify: windowsToast });
+  const pairing = createPairing(dir);
+  const app = await buildApp({ stateDir: dir, notify: windowsToast, pairing });
   await app.listen({ host, port: cfg.port });
-  console.log(`ShotFolder ouvindo em http://${host}:${cfg.port} (estado em ${dir})`);
 
-  const stop = () => void app.close().then(() => process.exit(0));
+  // Token novo a cada partida; a CLI lê este arquivo para falar com a API admin.
+  const token = randomBytes(32).toString("base64url");
+  await writeFile(join(dir, FILES.adminToken), token, { encoding: "utf8", mode: 0o600 });
+  const admin = await buildAdminApp({
+    stateDir: dir,
+    token,
+    adminPort: cfg.adminPort,
+    publicHost: host,
+    publicPort: cfg.port,
+    pairing,
+  });
+  await admin.listen({ host: "127.0.0.1", port: cfg.adminPort });
+
+  console.log(`ShotFolder ouvindo em http://${host}:${cfg.port} (estado em ${dir})`);
+  console.log(`Admin local em http://127.0.0.1:${cfg.adminPort}. Para parear: shotfolder pair`);
+
+  const stop = () => {
+    pairing.cancel();
+    void Promise.all([app.close(), admin.close(), unlink(join(dir, FILES.adminToken)).catch(() => {})]).then(() =>
+      process.exit(0),
+    );
+  };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
 }
 
-main().catch((e: unknown) => {
-  console.error(`Erro: ${(e as Error).message}`);
-  process.exit(1);
-});

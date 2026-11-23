@@ -19,7 +19,19 @@ import { ALLOWED_CONTENT_TYPES, ROUTES, type ErrorCode, type UploadFields } from
 import { authenticateFolders, authenticateUpload } from "@shotfolder/protocol/node";
 import { checkFolderPath, defaultForbiddenRoots, destinationPath, generateFileName, sniffImageType } from "./files.js";
 import { noopNotifier, type Notifier } from "./notify.js";
-import { audit, ensureStateDir, FILES, keyLookup, loadConfig, loadDevices, SeenStore, type AuditEvent } from "./state.js";
+import { Pairing } from "./pairing.js";
+import {
+  audit,
+  ensureStateDir,
+  FILES,
+  keyLookup,
+  loadConfig,
+  loadDevices,
+  newDeviceId,
+  saveDevices,
+  SeenStore,
+  type AuditEvent,
+} from "./state.js";
 
 export interface AppDeps {
   stateDir: string;
@@ -27,6 +39,23 @@ export interface AppDeps {
   notify?: Notifier;
   /** Pastas proibidas; os testes trocam para poder usar pastas temporárias. */
   forbiddenRoots?: string[];
+  /** Pareamento compartilhado com a API admin. Se ausente, cria um. */
+  pairing?: Pairing;
+}
+
+/** Cria o pareamento que grava o aparelho aceito em devices.json. */
+export function createPairing(stateDir: string, now: () => number = Date.now, confirmMs?: number): Pairing {
+  return new Pairing({
+    now,
+    newDeviceId,
+    ...(confirmMs === undefined ? {} : { confirmMs }),
+    onAccept: async (c) => {
+      const devices = await loadDevices(stateDir);
+      devices.push({ id: c.deviceId, name: c.name, publicKey: c.publicKey, createdAt: new Date(now()).toISOString() });
+      await saveDevices(stateDir, devices);
+      await audit(stateDir, now(), { event: "pair_accepted", deviceId: c.deviceId, name: c.name });
+    },
+  });
 }
 
 /** Erro com resposta HTTP já definida. */
@@ -46,6 +75,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const now = deps.now ?? Date.now;
   const notify = deps.notify ?? noopNotifier;
   const forbidden = deps.forbiddenRoots ?? defaultForbiddenRoots(dir);
+  const pairing = deps.pairing ?? createPairing(dir, now);
   await ensureStateDir(dir);
   await cleanTmp(dir);
   const seen = await SeenStore.open(dir);
@@ -57,7 +87,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const bytesToday = new Map<string, number>();
   const authed = new WeakMap<FastifyRequest, UploadFields>();
 
-  const log = (ev: AuditEvent) => audit(dir, now(), ev).catch(() => {});
+  /** Grava no log antes de responder (assim o log nunca fica atrás da resposta). */
+  const log = (ev: AuditEvent): Promise<void> => audit(dir, now(), ev).catch(() => {});
 
   const app = Fastify({
     logger: false,
@@ -65,6 +96,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     requestTimeout: 120_000,
     connectionTimeout: 30_000,
     return503OnClosing: true,
+    // Campo a mais no JSON é recusado, não silenciosamente descartado.
+    ajv: { customOptions: { removeAdditional: false } },
   });
 
   // A foto não é carregada na memória: o "parser" só repassa o fluxo de bytes.
@@ -72,12 +105,38 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   const reject = (reply: FastifyReply, status: number, error: string) => reply.code(status).send({ error });
 
+  // ---------- POST /v1/pair ----------
+  app.post(
+    ROUTES.pair,
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["token", "publicKey", "deviceName"],
+          additionalProperties: false,
+          properties: {
+            token: { type: "string", maxLength: 64 },
+            publicKey: { type: "string", maxLength: 400 },
+            deviceName: { type: "string", maxLength: 40 },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const b = req.body as { token: string; publicKey: string; deviceName: string };
+      await log({ event: "pair_submitted", ip: req.ip, name: b.deviceName });
+      const outcome = await pairing.submit(b.token, b.publicKey, b.deviceName);
+      if (outcome.status !== 201) await log({ event: "pair_failed", ip: req.ip, reason: outcome.body.error });
+      return reply.code(outcome.status).send(outcome.body);
+    },
+  );
+
   // ---------- GET /v1/folders ----------
   app.get(ROUTES.folders, async (req, reply) => {
     const devices = await loadDevices(dir);
     const r = authenticateFolders(req.headers, { nowMs: now(), getPublicKey: keyLookup(devices) });
     if (!r.ok) {
-      log({ event: "folders_rejected", ip: req.ip, reason: r.error, field: r.field });
+      await log({ event: "folders_rejected", ip: req.ip, reason: r.error, field: r.field });
       return AUTH_ERRORS.has(r.error) ? reject(reply, 401, "unauthorized") : reject(reply, 400, r.error);
     }
     const cfg = await loadConfig(dir);
@@ -96,7 +155,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         const devices = await loadDevices(dir);
         const r = authenticateUpload(req.headers, { nowMs: now(), getPublicKey: keyLookup(devices) });
         if (!r.ok) {
-          log({ event: "upload_rejected", ip: req.ip, reason: r.error, field: r.field });
+          await log({ event: "upload_rejected", ip: req.ip, reason: r.error, field: r.field });
           return AUTH_ERRORS.has(r.error) ? reject(reply, 401, "unauthorized") : reject(reply, 400, r.error);
         }
         authed.set(req, r.value);
@@ -109,10 +168,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       const previous = seen.get(f.uploadId);
       if (previous) {
         if (previous.deviceId !== f.deviceId) {
-          log({ event: "upload_rejected", ...base, reason: "upload_id_conflict" });
+          await log({ event: "upload_rejected", ...base, reason: "upload_id_conflict" });
           return reject(reply, 409, "upload_id_conflict");
         }
-        log({ event: "upload_duplicate", ...base, file: previous.file });
+        await log({ event: "upload_duplicate", ...base, file: previous.file });
         return reply.code(200).send({ status: "duplicate", file: previous.file, folder: previous.folderId });
       }
       if (inFlight.has(f.uploadId)) return reject(reply, 409, "in_progress");
@@ -120,15 +179,15 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       inFlight.add(f.uploadId);
       try {
         const saved = await receive(f, req.body as Readable);
-        log({ event: "upload_saved", ...base, file: saved.file, bytes: Number(f.contentLength) });
+        await log({ event: "upload_saved", ...base, file: saved.file, bytes: Number(f.contentLength) });
         notify("Foto recebida", `${saved.file} → ${saved.folderName}`);
         return reply.code(201).send({ status: "saved", file: saved.file, folder: f.folderId });
       } catch (e) {
         if (e instanceof HttpError) {
-          log({ event: "upload_rejected", ...base, reason: e.code });
+          await log({ event: "upload_rejected", ...base, reason: e.code });
           return reject(reply, e.status, e.code);
         }
-        log({ event: "upload_error", ...base, reason: (e as Error).message });
+        await log({ event: "upload_error", ...base, reason: (e as Error).message });
         return reject(reply, 500, "internal_error");
       } finally {
         inFlight.delete(f.uploadId);
@@ -202,10 +261,15 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     }
   }
 
+  // Ao desligar, solta o celular que estiver esperando confirmação.
+  app.addHook("preClose", async () => {
+    if (!deps.pairing) pairing.cancel();
+  });
+
   // Qualquer outra rota: 404 sem detalhes.
   app.setNotFoundHandler((_req, reply) => reject(reply, 404, "not_found"));
-  app.setErrorHandler((err: { message?: string; statusCode?: number }, req, reply) => {
-    log({ event: "http_error", ip: req.ip, reason: err.message });
+  app.setErrorHandler(async (err: { message?: string; statusCode?: number }, req, reply) => {
+    await log({ event: "http_error", ip: req.ip, reason: err.message });
     const status = err.statusCode && err.statusCode < 500 ? err.statusCode : 500;
     return reject(reply, status, status === 500 ? "internal_error" : "bad_request");
   });

@@ -5,11 +5,13 @@
  * é o que o Android Keystore produz ("SHA256withECDSA").
  * A chave pública do aparelho é guardada em SPKI/DER, codificada em base64.
  */
-import { createPublicKey, verify, type KeyObject } from "node:crypto";
+import { createHash, createPublicKey, verify, type KeyObject } from "node:crypto";
 import {
   buildFoldersCanonical,
   buildUploadCanonical,
   isTimestampFresh,
+  pairCodeFromSha256Hex,
+  pairCodeInput,
   parseFoldersHeaders,
   parseUploadHeaders,
   type FoldersFields,
@@ -82,4 +84,9 @@ export function authenticateUpload(headers: HeaderBag, opts: AuthOptions): Resul
 
 export function authenticateFolders(headers: HeaderBag, opts: AuthOptions): Result<FoldersFields> {
   return authenticate(parseFoldersHeaders(headers), buildFoldersCanonical, opts);
+}
+
+/** Código de confirmação do pareamento (versão Node; o app usa expo-crypto). */
+export function pairCode(token: string, publicKeySpki: string): string {
+  return pairCodeFromSha256Hex(createHash("sha256").update(pairCodeInput(token, publicKeySpki), "utf8").digest("hex"));
 }
